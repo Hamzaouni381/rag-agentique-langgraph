@@ -1,0 +1,23 @@
+# Secrets
+.env
+
+# Données personnelles et documents
+data/
+
+# Environnements et dépendances
+.venv/
+frontend/node_modules/
+
+# Fichiers générés
+frontend/dist/
+eval/results/
+*.log
+
+# Caches
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+
+# Éditeurs
+.vscode/
+.idea/

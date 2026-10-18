@@ -1,0 +1,7 @@
+# Questions sur le corpus de demonstration (samples/)
+Quel est l'indice de protection du portique PV-300 ?
+Que faut-il faire avant d'ouvrir le capot du portique ?
+A partir de combien de minutes de retard a-t-on droit a un avoir sur la ligne T2 ?
+Combien de temps sont conserves les objets trouves ?
+Quel est le retard total cumule sur la ligne T2 ?
+Quel est le salaire du directeur ?

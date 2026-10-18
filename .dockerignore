@@ -1,0 +1,8 @@
+.venv
+data
+.env
+**/__pycache__
+.pytest_cache
+eval/results
+frontend/node_modules
+frontend/dist

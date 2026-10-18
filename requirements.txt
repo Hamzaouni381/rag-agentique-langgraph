@@ -1,0 +1,38 @@
+# --- Orchestration LLM ---
+langchain>=1.0,<2
+langchain-classic>=1.0,<2      # retrievers avances (ContextualCompression, Ensemble), RecordManager
+langchain-community>=0.4,<1    # SQLDatabase, BM25, CrossEncoder HF
+langgraph>=1.0,<2
+langgraph-checkpoint-postgres>=3.0  # memoire conversationnelle persistee dans Postgres
+
+# --- Fournisseurs LLM / embeddings (choisis via .env) ---
+langchain-openai>=1.0,<2
+langchain-ollama>=1.0,<2
+langchain-huggingface>=1.0,<2
+sentence-transformers
+
+# --- Base vectorielle + SQL : un seul PostgreSQL (pgvector) ---
+langchain-postgres>=0.0.15
+psycopg[binary]>=3.2
+psycopg-pool
+sqlalchemy>=2
+
+# --- Parsing (parseurs maison PDF/Word conserves de la V1) ---
+pymupdf
+pdfplumber
+python-docx
+pandas
+openpyxl
+rank-bm25
+
+# --- API ---
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic-settings
+
+# --- Observabilite ---
+langsmith
+
+# --- Tests ---
+pytest

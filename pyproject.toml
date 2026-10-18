@@ -1,0 +1,16 @@
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["app/parsers"]  # parseurs V1 copies tels quels
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008"]  # File(...) / Depends(...) en valeur par defaut : idiome FastAPI
+
+[tool.ruff.lint.per-file-ignores]
+"app/prompts.py" = ["E501"]   # texte de prompt : lisibilite > longueur de ligne
+"tests/*" = ["E501"]
