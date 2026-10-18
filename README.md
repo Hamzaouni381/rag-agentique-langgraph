@@ -1,4 +1,5 @@
 # RAG agentique V2 — LangChain · LangGraph · PostgreSQL/pgvector · LangSmith
+[![CI](https://github.com/Hamzaouni381/rag-agentique-langgraph/actions/workflows/ci.yml/badge.svg)](https://github.com/Hamzaouni381/rag-agentique-langgraph/actions/workflows/ci.yml)
 
 Assistant qui répond en langage naturel à partir de **documents** (PDF, Word) et de **données tabulaires** (Excel, CSV).
 Un graphe **LangGraph** choisit la bonne stratégie : **RAG correctif**, **Text-to-SQL auto-corrigé** ou conversation simple, avec **mémoire de conversation** persistée.
