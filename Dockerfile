@@ -16,6 +16,9 @@ RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
+# Modeles dans l'image : en cloud (scale-to-zero, disque ephemere) rien a retelecharger au reveil.
+RUN python -c "from sentence_transformers import CrossEncoder, SentenceTransformer; SentenceTransformer('intfloat/multilingual-e5-small'); CrossEncoder('BAAI/bge-reranker-base')"
+
 COPY app ./app
 COPY --from=frontend /frontend/dist ./frontend/dist
 EXPOSE 8000

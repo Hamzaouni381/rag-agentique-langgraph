@@ -16,6 +16,7 @@ import uuid
 from pathlib import Path
 
 from app.graph import get_graph, make_input
+from app.observability import flush, run_config
 from app.prompts import NOT_FOUND
 
 HERE = Path(__file__).parent
@@ -30,7 +31,7 @@ def load_questions(path: Path, limit: int) -> list[str]:
 
 def target(inputs: dict) -> dict:
     t0 = time.time()
-    out = get_graph().invoke(make_input(inputs["question"]), {"configurable": {"thread_id": f"eval-{uuid.uuid4()}"}})
+    out = get_graph().invoke(make_input(inputs["question"]), run_config(f"eval-{uuid.uuid4()}", run_name="eval"))
     return {
         "answer": out.get("answer", ""),
         "route": out.get("route", ""),
@@ -120,3 +121,4 @@ if __name__ == "__main__":
         run_langsmith(qs, evs)
     else:
         run_local(qs, evs)
+    flush()

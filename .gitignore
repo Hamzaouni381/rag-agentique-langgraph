@@ -1,5 +1,6 @@
 # Secrets
 .env
+infra/.secrets.ps1
 
 # Données personnelles et documents
 data/
@@ -21,3 +22,6 @@ __pycache__/
 # Éditeurs
 .vscode/
 .idea/
+# Jeux de questions internes d'un ancien employeur : ne jamais publier
+eval/questions_rag.txt
+eval/questions_sql.txt

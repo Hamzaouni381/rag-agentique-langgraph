@@ -17,6 +17,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.loaders import DOCUMENT_EXTENSIONS, TABULAR_EXTENSIONS
+from app.observability import run_config
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
 
@@ -116,16 +117,12 @@ def upload(files: list[UploadFile] = File(...)):
     return {"saved": saved, **ingest_directory(cleanup="incremental")}
 
 
-def _run_config(thread_id: str) -> dict:
-    return {"configurable": {"thread_id": thread_id}, "run_name": "ask", "metadata": {"thread_id": thread_id}}
-
-
 @api.post("/ask", response_model=AskResponse, dependencies=[Depends(require_api_key)])
 def ask(req: AskRequest):
     from app.graph import get_graph, make_input
 
     thread_id = req.thread_id or str(uuid.uuid4())
-    out = get_graph().invoke(make_input(req.question), _run_config(thread_id))
+    out = get_graph().invoke(make_input(req.question), run_config(thread_id))
     return AskResponse(
         answer=out.get("answer", ""),
         route=out.get("route", ""),
@@ -142,7 +139,7 @@ def ask_stream(req: AskRequest):
 
     thread_id = req.thread_id or str(uuid.uuid4())
     graph = get_graph()
-    config = _run_config(thread_id)
+    config = run_config(thread_id)
 
     def sse(event: str, data: dict) -> str:
         return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"

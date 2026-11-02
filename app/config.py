@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     max_rewrites: int = 1         # boucles de reformulation si contexte non pertinent
     max_sql_retries: int = 1      # boucles d'auto-correction SQL
 
+    # --- Langfuse (traces, tokens, couts) : actif seulement si les deux cles sont definies ---
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_base_url: str = "https://cloud.langfuse.com"  # region UE ; ou l'URL d'un Langfuse auto-heberge
+
     # --- API ---
     api_key: str = ""             # si defini, exige l'en-tete X-API-Key
 

@@ -243,6 +243,17 @@ Il est utilisé via `langchain-huggingface` (`HuggingFaceEmbeddings`), qui s'app
 - **En production, c'est l'outil n°1 pour comprendre une mauvaise réponse** : on voit si le problème vient du routage, de la recherche (mauvais passages) ou de la génération (bons passages mais mauvaise réponse).
 - **Les traces contiennent les données** (questions, passages). Pour des documents confidentiels, il faut vérifier la politique de l'entreprise : LangSmith peut être auto-hébergé, ou les entrées et sorties masquées.
 
+### Langfuse (alternative open source, utilisée pour suivre les tokens et les coûts)
+
+**C'est quoi.** Une plateforme d'observabilité LLM **open source** (licence MIT, rachetée par ClickHouse en janvier 2026). Même principe que LangSmith : une trace par question, avec chaque nœud et chaque appel LLM. Son point fort ici : les **tableaux de bord de tokens et de coûts** (par jour, par modèle, par conversation).
+
+**Comment on l'utilise.** `app/observability.py` ajoute le *callback* Langfuse à la configuration de chaque exécution du graphe, seulement si `LANGFUSE_PUBLIC_KEY` et `LANGFUSE_SECRET_KEY` sont définies. Un `thread_id` devient une **session** Langfuse : les questions d'une même conversation sont regroupées et leurs tokens additionnés.
+
+**À savoir.**
+- **Avec Ollama, les tokens sont comptés mais le coût vaut 0** : Langfuse ne connaît pas de prix pour un modèle local. Avec `LLM_PROVIDER=openai`, le coût est calculé automatiquement (Langfuse connaît les tarifs OpenAI). On peut aussi déclarer un prix pour `qwen2.5:1.5b` dans *Settings → Models*, pour simuler le coût d'un passage en API.
+- **Cloud ou auto-hébergé.** L'auto-hébergement demande 6 services (web, worker, PostgreSQL, ClickHouse, Redis, stockage objet) et plusieurs Go de RAM : trop lourd à côté d'Ollama sur un PC de 12 Go. On utilise donc **Langfuse Cloud, région UE** (offre gratuite). Le code est identique dans les deux cas : seule `LANGFUSE_BASE_URL` change.
+- Pourquoi garder les deux outils : LangSmith reste branché sur l'évaluation (datasets, expériences) ; Langfuse sert au suivi des coûts. En entreprise, on en choisirait **un seul**.
+
 ---
 
 ## 2.11 FastAPI et SSE
@@ -301,6 +312,6 @@ Il est utilisé via `langchain-huggingface` (`HuggingFaceEmbeddings`), qui s'app
 
 ## 2.15 pytest, ruff et GitHub Actions
 
-- **pytest** est le framework de tests Python. Il y a 27 tests ; ils n'ont besoin ni de LLM ni de base de données, grâce à l'injection de dépendances ([chapitre 9](09_qualite.md)).
+- **pytest** est le framework de tests Python. Il y a 30 tests ; ils n'ont besoin ni de LLM ni de base de données, grâce à l'injection de dépendances ([chapitre 9](09_qualite.md)).
 - **ruff** est un linter Python ultra-rapide. Il vérifie le style, les erreurs probables et l'ordre des imports. Les règles sont configurées dans `pyproject.toml` : E, F, I, UP et B.
 - **GitHub Actions** est la CI de GitHub. À chaque push ou pull request, le fichier `.github/workflows/ci.yml` lance le lint, les tests, puis le build de l'image Docker. Un commit qui casse un test est signalé immédiatement.

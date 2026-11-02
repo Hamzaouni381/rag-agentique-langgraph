@@ -123,7 +123,7 @@ La V1 avait été écrite **entièrement à la main**, sans framework. La V2 gar
 | Ré-ingestion | Risque de doublons | API `index()` + RecordManager : **idempotente** |
 | Mémoire | Aucune | Checkpointer Postgres par conversation |
 | Observabilité | Logs fichiers | Traces **LangSmith** |
-| Qualité | Scripts de test manuels | 27 tests automatiques + évaluation + **CI GitHub Actions** |
+| Qualité | Scripts de test manuels | 30 tests automatiques + évaluation + **CI GitHub Actions** |
 
 **Conservé de la V1** : les **parseurs PDF/Word**, qui transforment les tableaux en Markdown et retirent les en-têtes et pieds de page répétés, ainsi que les **règles métier du prompt** (copier les valeurs exactement, ne pas mélanger deux lignes d'un tableau…). Ce sont les éléments les plus « métier » de la V1, ceux qu'un framework ne fournit pas.
 

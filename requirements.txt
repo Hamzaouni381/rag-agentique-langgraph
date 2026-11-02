@@ -33,6 +33,7 @@ pydantic-settings
 
 # --- Observabilite ---
 langsmith
+langfuse>=5,<6                 # traces + tokens + couts (actif si LANGFUSE_* definies)
 
 # --- Tests ---
 pytest

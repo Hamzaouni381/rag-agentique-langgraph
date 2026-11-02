@@ -8,7 +8,7 @@ Un système LLM se vérifie à **trois niveaux** différents, qui ne répondent 
 | **Évaluation** | « Les réponses sont-elles bonnes ? » | `eval/run_eval.py` + LangSmith | Oui : le vrai système |
 | **Observabilité** | « Pourquoi cette réponse précise est-elle mauvaise ? » | Traces LangSmith | Oui, en production |
 
-## 9.1 Les tests unitaires (27 tests, environ 2 secondes)
+## 9.1 Les tests unitaires (30 tests, environ 4 secondes)
 
 `pytest -q` lance tout. Aucun test n'a besoin d'Ollama, de PostgreSQL ou d'un modèle. Ils tournent donc partout, y compris en CI.
 
@@ -38,6 +38,12 @@ Le graphe est construit avec des **faux composants** (injection de dépendances)
 - **Mise en forme du contexte** : la page n'est citée que si elle est connue.
 - **Normalisation des noms de colonnes** : « N° Série / Instrument » → `n_serie_instrument`.
 - **Ingestion Word de bout en bout** : un .docx avec titre, texte et tableau est créé, chargé, découpé ; on vérifie les métadonnées, la présence du tableau et le préfixe de fichier.
+
+### `tests/test_observability.py` — Langfuse
+Sans compte ni réseau : les traces sont capturées **en mémoire** au lieu d'être envoyées.
+- sans clés, aucun callback n'est ajouté (aucun appel réseau) ;
+- avec clés, le callback est branché et la conversation (`thread_id`) devient une session ;
+- de bout en bout sur le graphe, avec un faux LLM qui déclare ses tokens : chaque appel LLM (routage, génération) est tracé avec **ses** tokens, et les nœuds `route`, `retrieve` et `generate` apparaissent dans la trace.
 
 **Principe à retenir** : on ne teste pas « est-ce que le LLM répond bien » (c'est le rôle de l'évaluation), mais « est-ce que **mon code** réagit correctement à **chaque réponse possible** du LLM », y compris les mauvaises et les pannes.
 
@@ -81,6 +87,24 @@ Avec `LANGSMITH_TRACING=true` et une clé, **chaque question** produit une trace
 2. **Les passages contiennent-ils la réponse ?** Sinon, le problème est **en amont** : parsing, chunking, recherche.
 3. **Les passages sont bons, mais la réponse fausse ?** Le problème est dans la **génération** : modèle trop faible ou prompt à revoir.
 
+### Les tokens et les coûts (Langfuse)
+
+Avec les clés `LANGFUSE_*` dans `.env`, chaque question apparaît dans Langfuse avec ses tokens, nœud par nœud. Mesure réelle sur 3 questions (`qwen2.5:1.5b`, une conversation : question documentaire, relance, question SQL) :
+
+| Nœud | Appels LLM | Tokens en entrée | Tokens en sortie |
+|---|---|---|---|
+| `generate` | 2 | 1 611 | 56 |
+| `route` | 3 | 430 | 6 |
+| `write_sql` | 1 | 416 | 24 |
+| `contextualize` | 2 | 279 | 46 |
+| `answer_sql` | 1 | 108 | 17 |
+| **Total** | **9** | **2 844** | **149** |
+
+**Ce qu'on en apprend (FinOps)** :
+- **La génération coûte plus de la moitié des tokens**, à cause des 5 passages de 1 500 caractères envoyés au LLM. Le levier n°1 pour réduire le coût, c'est donc `TOP_N` et `CHUNK_SIZE`, à condition de vérifier avec l'évaluation que la qualité ne baisse pas.
+- **Le routage coûte à chaque question**, même pour un simple « bonjour ». Un routeur par règles, ou un modèle plus petit pour cette seule étape, ferait économiser environ 15 % des tokens.
+- **Les tokens d'entrée dominent** (environ 95 %) : avec une API, les tarifs « entrée » comptent plus que les tarifs « sortie ».
+
 ## 9.4 La CI (GitHub Actions)
 
 Le fichier `.github/workflows/ci.yml` se déclenche à chaque push sur `main` et à chaque pull request.
@@ -91,7 +115,7 @@ job "tests"                              job "docker" (si "tests" passe)
  2. installe Python 3.12 (avec cache)     2. construit l'image Docker complète
  3. installe torch CPU + dépendances         (interface React + API)
  4. ruff : vérification du code
- 5. pytest : les 27 tests
+ 5. pytest : les 30 tests
 ```
 
 **Ce que ça garantit** : aucun commit qui casse un test, le style du code ou la construction de l'image ne passe inaperçu. La suite logique (CD) serait de **publier l'image** dans un registre, puis de la **déployer** (Azure Container Apps, par exemple), une fois les tests passés.

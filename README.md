@@ -39,6 +39,7 @@ graph TD;
 | **Text-to-SQL** | questions analytiques | `SQLDatabase` (schéma et lignes d'exemple) → génération → exécution → auto-correction sur erreur |
 | **Mémoire** | questions de relance (« Et sa température ? ») | checkpointer `PostgresSaver` (clé `thread_id`) + nœud de contextualisation |
 | **Observabilité** | traces de chaque nœud et de chaque appel LLM | LangSmith (variables d'environnement, aucun code à écrire) |
+| **Tokens et coûts** | combien consomme chaque question, chaque nœud, chaque conversation | Langfuse (callback ajouté par `app/observability.py`, actif si les clés sont dans `.env`) |
 | **API** | intégration | FastAPI : `/api/ask`, `/api/ask/stream` (SSE), `/api/upload`, `/api/documents`, `/api/health` |
 | **Interface** | démo utilisateur | React + Vite : chat en streaming, étapes du graphe en direct, sources, SQL, gestion des documents |
 
@@ -122,18 +123,25 @@ Tout en conteneurs : `docker compose --profile full up --build`.
 ### Observabilité LangSmith
 Dans `.env` : `LANGSMITH_TRACING=true`, `LANGSMITH_API_KEY=...`, `LANGSMITH_PROJECT=rag-v2`. Chaque requête apparaît alors comme une trace avec le détail de chaque nœud du graphe : prompts, latences, tokens, documents récupérés.
 
+### Tokens et coûts avec Langfuse
+1. Créer un compte gratuit sur [cloud.langfuse.com](https://cloud.langfuse.com) (région UE), puis un projet et une paire de clés (*Settings → API Keys*).
+2. Dans `.env` : `LANGFUSE_PUBLIC_KEY=pk-lf-...`, `LANGFUSE_SECRET_KEY=sk-lf-...`, `LANGFUSE_BASE_URL=https://cloud.langfuse.com`.
+3. Relancer le serveur et poser des questions : chaque question devient une trace (tokens par nœud), chaque conversation une session (tokens cumulés), et le tableau de bord additionne le tout.
+
+Mesure réelle : une question documentaire consomme environ 900 tokens, dont plus de la moitié pour la génération (les passages envoyés au LLM). Avec Ollama, le coût affiché est 0 € : Langfuse ne connaît pas de prix pour un modèle local. Avec `LLM_PROVIDER=openai`, il est calculé automatiquement. Détails : [doc/09_qualite.md](doc/09_qualite.md).
+
 ---
 
 ## Tests, CI, évaluation
 
 ```bash
-pytest -q                  # 27 tests, sans LLM ni base (faux LLM / retriever / SQL injectés)
+pytest -q                  # 30 tests, sans LLM ni base (faux LLM / retriever / SQL injectés)
 ruff check app tests scripts eval --exclude app/parsers
 python -m eval.run_eval --file eval/questions_demo.txt   # évaluation de bout en bout
 ```
 
 - **Tests du graphe** (`tests/test_graph.py`) : le graphe reçoit ses dépendances par injection, ce qui permet de tester chaque chemin de façon déterministe : RAG, reformulation puis refus, SQL avec auto-correction, mémoire multi-tours, panne d'un appel LLM auxiliaire.
-- **CI** (`.github/workflows/ci.yml`) : lint, tests, puis build de l'image Docker (interface React incluse, build multi-étapes).
+- **CI** (`.github/workflows/ci.yml`) : lint, tests, puis build de l'image Docker (interface React incluse, build multi-étapes), publiée sur ghcr.io depuis `main`.
 - **Évaluation** (`eval/run_eval.py`) : métriques `answered`, `cited`, latence, et `groundedness` en option (LLM-juge, `--judge`). Avec `LANGSMITH_API_KEY`, les questions deviennent un dataset LangSmith et chaque exécution une expérience comparable dans l'interface. Sans clé, les résultats sont écrits en CSV dans `eval/results/`.
 
 ### Résultats mesurés (PC local, CPU uniquement, corpus de démo)
@@ -171,11 +179,15 @@ scripts/            ingest, ask (CLI), make_samples
 eval/               run_eval.py + jeux de questions
 tests/              tests unitaires et tests du graphe
 docker/init.sql     extension vector, schéma tabular, rôle lecture seule
+infra/              déploiement Azure : main.bicep (infrastructure), init_db.sql
 demarrer.bat        lancement en un double-clic
 ```
+
+## Déploiement Azure
+
+Container Apps (scale-to-zero), PostgreSQL Flexible Server avec pgvector, Azure OpenAI et Azure Files, décrits en Bicep. Guide commande par commande, coûts et dépannage : [doc/11_deploiement_azure.md](doc/11_deploiement_azure.md).
 
 ## Pistes suivantes
 - Version async (`ainvoke`, `AsyncPostgresSaver`) pour la montée en charge de l'API.
 - Human-in-the-loop LangGraph (`interrupt`) pour valider une requête SQL sensible avant son exécution.
 - Jeu d'évaluation avec réponses de référence et métriques RAGAS (`context_recall`, `faithfulness`).
-- Déploiement Azure Container Apps + Azure Database for PostgreSQL (pgvector disponible).

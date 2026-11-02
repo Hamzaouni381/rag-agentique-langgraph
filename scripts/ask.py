@@ -4,6 +4,7 @@ import logging
 import uuid
 
 from app.graph import get_graph, make_input
+from app.observability import flush, run_config
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
@@ -13,13 +14,14 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO if args.trace else logging.WARNING)
 
     thread_id = args.thread or str(uuid.uuid4())
-    config = {"configurable": {"thread_id": thread_id}}
+    config = run_config(thread_id, run_name="cli")
     graph = get_graph()
     print(f"Conversation {thread_id} (Ctrl+C pour quitter)")
     while True:
         try:
             q = input("\nVous > ").strip()
         except (KeyboardInterrupt, EOFError):
+            flush()
             break
         if not q:
             continue

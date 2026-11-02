@@ -30,7 +30,7 @@ Conditions : PC portable, CPU uniquement (pas de GPU NVIDIA), corpus de démonst
 | Taux de citation dans le texte (`cited`) | 0 % avec le 1.5b (sources renvoyées à part par l'API) |
 | Ré-ingestion sans changement | 5/5 chunks ignorés (idempotence vérifiée) |
 | Tentative de `DROP TABLE` avec le rôle lecteur | Refusée par PostgreSQL |
-| Tests automatiques | 27/27, ≈ 2 s |
+| Tests automatiques | 30/30, ≈ 4 s |
 
 ## 10.3 Les limites (à connaître et à assumer)
 
@@ -50,7 +50,7 @@ Conditions : PC portable, CPU uniquement (pas de GPU NVIDIA), corpus de démonst
 3. **Le *human-in-the-loop*** : `interrupt()` LangGraph avant l'exécution d'un SQL sensible, pour qu'un humain valide.
 4. **Version asynchrone** + recherche plein texte PostgreSQL + index HNSW, pour monter en charge.
 5. **Authentification** (Entra ID, comme la V1 avec MSAL) et cloisonnement des documents par utilisateur.
-6. **Le déploiement continu** : publication de l'image en CI → Azure Container Apps + Azure Database for PostgreSQL (pgvector disponible).
+6. **Le déploiement continu complet** : la CI publie déjà l'image et l'infrastructure est en Bicep ([chapitre 11](11_deploiement_azure.md)) ; la mise à jour de la Container App reste manuelle.
 7. **Le routage par sortie structurée**, et des outils supplémentaires branchés comme nouvelles branches du graphe (API métier, recherche web…).
 
 ## 10.5 Préparation d'entretien
@@ -63,7 +63,7 @@ Conditions : PC portable, CPU uniquement (pas de GPU NVIDIA), corpus de démonst
 > - un **Text-to-SQL auto-corrigé** sur les tableaux Excel importés, sécurisé par trois barrières dont un rôle PostgreSQL en lecture seule ;
 > - une réponse conversationnelle simple.
 >
-> J'ai **tout mis dans PostgreSQL** : vecteurs, tables et mémoire des conversations via le checkpointer LangGraph. L'ingestion est incrémentale grâce au RecordManager de LangChain. L'ensemble est exposé en **FastAPI avec streaming SSE**, avec une interface React qui montre les étapes de l'agent en direct. C'est tracé dans **LangSmith**, couvert par 27 tests qui tournent sans LLM grâce à l'injection de dépendances, et intégré dans une **CI GitHub Actions**.
+> J'ai **tout mis dans PostgreSQL** : vecteurs, tables et mémoire des conversations via le checkpointer LangGraph. L'ingestion est incrémentale grâce au RecordManager de LangChain. L'ensemble est exposé en **FastAPI avec streaming SSE**, avec une interface React qui montre les étapes de l'agent en direct. C'est tracé dans **LangSmith**, couvert par 30 tests qui tournent sans LLM grâce à l'injection de dépendances, et intégré dans une **CI GitHub Actions**.
 >
 > J'ai **mesuré** : le modèle 0.5b donnait 4 bonnes réponses sur 8, le 1.5b en donne 8 sur 9, et l'évaluation a révélé que le petit modèle ne cite pas ses sources dans le texte. C'est le genre d'écart que je mesure avant de livrer. »
 
@@ -111,7 +111,7 @@ Je sépare deux choses :
 
 **« Comment passerais-tu en production ? »**
 - Le code est déjà conteneurisé (Dockerfile multi-étapes), et la CI fait lint, tests et build.
-- J'ajouterais le déploiement continu vers Azure Container Apps et une base PostgreSQL managée avec pgvector.
+- Le déploiement sur Azure Container Apps avec une base PostgreSQL managée est décrit en Bicep ([chapitre 11](11_deploiement_azure.md)). J'ajouterais la mise à jour automatique de l'application après la CI.
 - Il faudrait aussi : authentification, cloisonnement des documents, version asynchrone, index HNSW et recherche plein texte en base, purge de la mémoire, alertes sur les traces LangSmith.
 
 **« Quelle est la plus grosse limite de ton système ? »**
@@ -127,4 +127,4 @@ Le routage repose en partie sur des **heuristiques**, pour compenser un petit mo
 - Chunks de **1 500** caractères avec **300** de chevauchement ; **20** candidats par recherche ; **5** passages au LLM ; seuil de pertinence de **0,15**.
 - Embeddings de **384** dimensions (e5-small, préfixes `query:` / `passage:`) ; fusion RRF pondérée **0,6 / 0,4**.
 - **3** barrières SQL ; délai maximal de **10 s** ; **100** lignes maximum.
-- **8/9** avec qwen 1.5b contre **4/8** avec le 0.5b ; **27** tests.
+- **8/9** avec qwen 1.5b contre **4/8** avec le 0.5b ; **30** tests.

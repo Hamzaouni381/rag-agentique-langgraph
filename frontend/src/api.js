@@ -1,7 +1,41 @@
 // Client de l'API FastAPI. En dev, Vite redirige /api vers http://localhost:8001.
 
+const API_KEY_STORAGE = "rag-v2-api-key";
+
+function loadApiKey() {
+  try {
+    return localStorage.getItem(API_KEY_STORAGE) || "";
+  } catch {
+    return "";
+  }
+}
+
+let apiKey = loadApiKey();
+
+function saveApiKey(key) {
+  apiKey = key;
+  try {
+    localStorage.setItem(API_KEY_STORAGE, key);
+  } catch {
+    /* stockage indisponible : la cle reste en memoire jusqu'au rechargement */
+  }
+}
+
+// Envoie X-API-Key si on en a une. La cle n'est jamais dans le JS publie : sur un 401, on la
+// demande une fois a l'utilisateur et elle reste dans son navigateur.
+async function authFetch(url, options = {}) {
+  const call = () =>
+    fetch(url, { ...options, headers: { ...options.headers, ...(apiKey ? { "X-API-Key": apiKey } : {}) } });
+  const res = await call();
+  if (res.status !== 401) return res;
+  const entered = window.prompt("Clé d'accès à l'API :")?.trim();
+  if (!entered) return res;
+  saveApiKey(entered);
+  return call();
+}
+
 async function request(path, options = {}) {
-  const res = await fetch(`/api${path}`, options);
+  const res = await authFetch(`/api${path}`, options);
   if (!res.ok) {
     let detail = `Erreur ${res.status}`;
     try {
@@ -26,7 +60,7 @@ export function uploadDocuments(files) {
 
 // Lit le flux SSE de /ask/stream et appelle handlers.step / token / done / error.
 export async function askStream(question, threadId, handlers, signal) {
-  const res = await fetch("/api/ask/stream", {
+  const res = await authFetch("/api/ask/stream", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question, thread_id: threadId }),
