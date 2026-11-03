@@ -18,6 +18,7 @@ Objectif : pouvoir **expliquer le fonctionnement complet de mémoire**, sans ouv
 | 9 | [Qualité : tests, évaluation, CI](09_qualite.md) | Expliquer la stratégie de test, l'évaluation LangSmith et la CI |
 | 10 | [Décisions, limites, entretien](10_decisions_et_entretien.md) | Défendre chaque choix, connaître les limites mesurées, répondre aux questions d'entretien |
 | 11 | [Déploiement Azure](11_deploiement_azure.md) | Déployer le projet sur Azure for Students commande par commande, maîtriser le coût, dépanner |
+| 12 | [Production d'entreprise](12_production_entreprise.md) | Situer le système par rapport à une vraie production : ce qui est fait, mesuré, à faire, hors budget |
 
 **Conseil** : lis les chapitres 1, 2 et 5 en premier. Ils donnent 80 % de la compréhension. Le chapitre 10 sert à préparer l'entretien.
 
