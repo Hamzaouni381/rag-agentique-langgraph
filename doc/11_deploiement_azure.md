@@ -10,10 +10,11 @@ Section tenue à jour à chaque intervention. N'y figure que ce qui a été vér
 |---|---|---|
 | 03/11/2026 | Application | **En ligne** : [rag-agentique.redground-2b9d1e76.spaincentral.azurecontainerapps.io](https://rag-agentique.redground-2b9d1e76.spaincentral.azurecontainerapps.io) |
 | 03/11/2026 | Azure | Groupe `rg-rag-agentique`, région `spaincentral`, déploiement `Succeeded`, base initialisée, pare-feu refermé |
-| 03/11/2026 | Images déployées | Tags `48dc93c2…` (API) et `ollama-48dc93c2…` (Ollama) |
+| 03/11/2026 | Images déployées | Tag du dernier commit d'application (API, résumés inclus) et `ollama-48dc93c2…` (Ollama). Valeur exacte : `az containerapp show -g rg-rag-agentique -n rag-agentique --query "properties.template.containers[].image"` |
 | 03/11/2026 | LLM | Ollama `qwen2.5:1.5b` dans un conteneur voisin de l'API, à la place d'Azure OpenAI (bloqué par `715-123420`) |
 | 03/11/2026 | Tests en production | Santé OK, `401` sans clé, 3 fichiers de `samples/` déposés en 9 s, questions documents et SQL correctes, streaming OK |
-| 03/11/2026 | Temps de réponse mesurés | Application déjà réveillée : 3 à 7 s ; première question après chargement des modèles : 17 s |
+| 03/11/2026 | Temps de réponse mesurés | Application déjà réveillée : 3 à 8 s pour une question, 8 à 20 s pour un résumé ; première question après chargement des modèles : 17 s |
+| 03/11/2026 | Non mesuré | Le réveil complet après mise en veille |
 
 ## 11.1 Ce qu'on déploie
 

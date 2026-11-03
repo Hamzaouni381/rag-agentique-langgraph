@@ -5,6 +5,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from app import retriever
 from app.graph.builder import build_graph, is_summary_request, make_input, parse_route
+from app.prompts import SUMMARY_NEEDS_DOCUMENT
 
 SOURCES = {"reglement_T2.pdf", "procedure_PV300.docx"}
 
@@ -51,6 +52,21 @@ def test_long_document_is_sampled_from_start_to_end(monkeypatch):
 
 def test_short_summary_request_is_not_routed_to_chat():
     assert parse_route("chat", False, "résume le règlement", "résume le règlement") == "documents"
+
+
+def test_summary_without_identified_document_asks_which_one_without_rewrite():
+    searched = []
+
+    def search(q):
+        searched.append(q)
+        return []
+
+    llm = FakeListChatModel(responses=["documents"])
+    g = build_graph(llm, search, None, summary_fn=lambda q: [], max_rewrites=1, checkpointer=InMemorySaver())
+    out = g.invoke(make_input("résume le document"), {"configurable": {"thread_id": "q"}})
+    assert out["answer"] == SUMMARY_NEEDS_DOCUMENT
+    assert searched == ["résume le document"]
+    assert out["sources"] == []
 
 
 def test_graph_uses_summary_chunks_and_summary_prompt():

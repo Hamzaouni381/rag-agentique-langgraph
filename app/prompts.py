@@ -15,6 +15,7 @@ REGLES ABSOLUES :
 8. Dans un tableau, choisis la ligne dont le libelle correspond le plus precisement a la question ; ne concatene jamais les valeurs de deux lignes."""
 
 NOT_FOUND = "Cette information n'apparait pas dans les passages fournis."
+SUMMARY_NEEDS_DOCUMENT = "Quel document faut-il résumer ? Indiquez son nom, tel qu'il apparaît dans la liste des documents."
 
 RAG_PROMPT = ChatPromptTemplate.from_messages([
     ("system", RAG_SYSTEM),

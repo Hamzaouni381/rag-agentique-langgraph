@@ -111,3 +111,14 @@ Ce schéma s'appelle le **RAG correctif** (*Corrective RAG*). Deux idées clés 
 - « La recherche est **hybride** : sémantique avec pgvector, lexicale avec BM25. Je fusionne les deux par **RRF**, qui ne compare que des rangs. »
 - « Un **cross-encoder** reclasse les candidats. Son score sert aussi de **juge de pertinence**, ce qui m'évite un appel LLM supplémentaire par document. »
 - « Si rien n'est pertinent, je **reformule une fois** puis je **refuse sans appeler le LLM**. C'est mon principal rempart contre les hallucinations. »
+- « Un **résumé** ne passe pas par cette recherche : je prends les passages du document cité, dans l'ordre, avec un prompt qui ne prévoit pas de refus. »
+
+## 4.10 Le cas des résumés
+
+Chercher les passages les plus proches de la question ne convient pas à un résumé : il faut couvrir le document, pas un extrait. Une demande contenant « résumé », « résumer » ou « synthèse » suit donc un autre chemin :
+
+1. **Choix du document** : celui dont le nom de fichier a le plus de mots dans la question, ou le seul du corpus. À égalité ou sans mot commun, on ne devine pas : la recherche normale s'applique, sans reformulation, et si elle ne trouve rien l'assistant demande quel document résumer.
+2. **Passages** : ceux de ce document, dans l'ordre du texte. Au-delà de 6 passages (`SUMMARY_MAX_CHUNKS`), on prend un échantillon régulier du début à la fin, pour tenir dans le contexte du modèle.
+3. **Prompt** : `SUMMARY_PROMPT`, sans la consigne de refus de `RAG_PROMPT`, qui faisait répondre « cette information n'apparaît pas ».
+
+**Limite :** sur un long document, le résumé repose sur cet échantillon de 6 passages (environ 9 000 caractères) et peut donc omettre des parties. Le couvrir entièrement demanderait de résumer par blocs, ce qui multiplierait les appels à un LLM sur CPU.

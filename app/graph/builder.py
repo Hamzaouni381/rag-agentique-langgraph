@@ -32,6 +32,7 @@ from app.prompts import (
     SQL_ANSWER_PROMPT,
     SQL_ERROR_BLOCK,
     SQL_PROMPT,
+    SUMMARY_NEEDS_DOCUMENT,
     SUMMARY_PROMPT,
 )
 from app.sql_backend import SqlBackend, clean_sql
@@ -199,6 +200,8 @@ def build_graph(
         best = max((d.metadata.get("relevance", 1.0) for d in docs), default=0.0)
         if docs and best >= relevance_threshold:
             return "generate"
+        if is_summary_request(state["standalone"]):  # reformuler ne dira pas quel document resumer
+            return "generate"
         return "rewrite" if state.get("rewrites", 0) < max_rewrites else "generate"
 
     def rewrite(state: GraphState) -> dict:
@@ -211,7 +214,8 @@ def build_graph(
         best = max((d.metadata.get("relevance", 1.0) for d in docs), default=0.0)
         if not docs or best < relevance_threshold:
             # Pas d'appel LLM sur un contexte hors sujet : c'est la que naissent les hallucinations.
-            return {"answer": NOT_FOUND, "sources": [], "messages": [AIMessage(NOT_FOUND)]}
+            refusal = SUMMARY_NEEDS_DOCUMENT if is_summary_request(state["standalone"]) else NOT_FOUND
+            return {"answer": refusal, "sources": [], "messages": [AIMessage(refusal)]}
         # RAG_PROMPT autorise le refus "information absente" : il ferait echouer une demande de resume.
         prompt = SUMMARY_PROMPT if is_summary_request(state["standalone"]) else RAG_PROMPT
         answer = (prompt | llm | to_text).invoke(
