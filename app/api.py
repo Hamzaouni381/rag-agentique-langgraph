@@ -11,7 +11,7 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from langchain_core.messages import AIMessageChunk
@@ -20,6 +20,7 @@ from sqlalchemy import text
 
 from app import audit
 from app.admission import BUSY_MESSAGE, QueueFull, get_admission
+from app.auth import LOGOUT_URL, User, require_admin, require_user, thread_key
 from app.config import get_settings
 from app.loaders import DOCUMENT_EXTENSIONS, TABULAR_EXTENSIONS
 from app.observability import run_config
@@ -71,18 +72,11 @@ api = APIRouter(prefix="/api")
 STREAMED_NODES = {"generate", "answer_sql", "chat"}
 ALLOWED_EXTENSIONS = DOCUMENT_EXTENSIONS | TABULAR_EXTENSIONS
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
-SHARED_KEY_USER = "cle-partagee"  # pas encore d'identite individuelle
 
 
 @app.exception_handler(QueueFull)
 def queue_full(_, __) -> JSONResponse:
     return JSONResponse(status_code=503, content={"detail": BUSY_MESSAGE}, headers={"Retry-After": "30"})
-
-
-def require_api_key(x_api_key: str | None = Header(default=None)):
-    expected = get_settings().api_key
-    if expected and x_api_key != expected:
-        raise HTTPException(status_code=401, detail="Cle API invalide")
 
 
 class AskRequest(BaseModel):
@@ -112,6 +106,16 @@ async def ready():
     return {"status": "ok"}
 
 
+@api.get("/me")
+def me(user: User = Depends(require_user)):
+    return {
+        "user": user.id,
+        "roles": sorted(user.roles),
+        "is_admin": user.is_admin,
+        "logout_url": LOGOUT_URL if get_settings().auth_mode == "easyauth" else None,
+    }
+
+
 @api.get("/health")
 def health():
     from app.vectorstore import get_engine
@@ -133,7 +137,7 @@ def _documents_dir() -> Path:
     return path
 
 
-@api.get("/documents", dependencies=[Depends(require_api_key)])
+@api.get("/documents", dependencies=[Depends(require_user)])
 def list_documents():
     files = [p for p in sorted(_documents_dir().iterdir()) if p.is_file() and p.suffix.lower() in ALLOWED_EXTENSIONS]
     return [
@@ -146,8 +150,8 @@ def list_documents():
     ]
 
 
-@api.delete("/documents/{name}", dependencies=[Depends(require_api_key)])
-def delete_document(name: str):
+@api.delete("/documents/{name}")
+def delete_document(name: str, user: User = Depends(require_admin)):
     from app.ingestion import ingest_directory
 
     path = _documents_dir() / Path(name).name  # Path(...).name : pas de traversee de dossier
@@ -157,11 +161,11 @@ def delete_document(name: str):
     with get_admission().slot():
         # cleanup='full' retire de l'index les chunks du fichier supprime.
         result = ingest_directory(cleanup="full")
-    audit.record("document_delete", "ok", user_id=SHARED_KEY_USER, details={"file": path.name})
+    audit.record("document_delete", "ok", user_id=user.id, details={"file": path.name})
     return result
 
 
-@api.post("/ingest", dependencies=[Depends(require_api_key)])
+@api.post("/ingest", dependencies=[Depends(require_admin)])
 def ingest(full_cleanup: bool = False):
     from app.ingestion import ingest_directory
 
@@ -169,8 +173,8 @@ def ingest(full_cleanup: bool = False):
         return ingest_directory(cleanup="full" if full_cleanup else "incremental")
 
 
-@api.post("/upload", dependencies=[Depends(require_api_key)])
-def upload(files: list[UploadFile] = File(...)):
+@api.post("/upload")
+def upload(files: list[UploadFile] = File(...), user: User = Depends(require_admin)):
     from app.ingestion import ingest_directory
 
     s = get_settings()
@@ -190,21 +194,23 @@ def upload(files: list[UploadFile] = File(...)):
         saved.append(name)
     with get_admission().slot():
         result = ingest_directory(cleanup="incremental")
-    audit.record("document_upload", "ok", user_id=SHARED_KEY_USER, details={"files": saved})
+    audit.record("document_upload", "ok", user_id=user.id, details={"files": saved})
     return {"saved": saved, **result}
 
 
-@api.get("/audit", dependencies=[Depends(require_api_key)])
+@api.get("/audit", dependencies=[Depends(require_admin)])
 def audit_log(limit: int = Query(default=50, ge=1, le=500)):
     return audit.recent(limit)
 
 
-def _audit_question(request_id: str, thread_id: str, question: str, started: float, status: str, out: dict) -> None:
+def _audit_question(
+    user: User, request_id: str, thread_id: str, question: str, started: float, status: str, out: dict
+) -> None:
     audit.record(
         "question",
         status,
         request_id=request_id,
-        user_id=SHARED_KEY_USER,
+        user_id=user.id,
         thread_id=thread_id,
         duration_ms=int((time.monotonic() - started) * 1000),
         question=question,
@@ -214,8 +220,8 @@ def _audit_question(request_id: str, thread_id: str, question: str, started: flo
     )
 
 
-@api.post("/ask", response_model=AskResponse, dependencies=[Depends(require_api_key)])
-def ask(req: AskRequest):
+@api.post("/ask", response_model=AskResponse)
+def ask(req: AskRequest, user: User = Depends(require_user)):
     from app.graph import get_graph, make_input
 
     thread_id = req.thread_id or str(uuid.uuid4())
@@ -224,13 +230,13 @@ def ask(req: AskRequest):
     status, out = "error", {}
     try:
         with get_admission().slot():
-            out = get_graph().invoke(make_input(req.question), run_config(thread_id))
+            out = get_graph().invoke(make_input(req.question), run_config(thread_key(user, thread_id)))
         status = "ok"
     except QueueFull:
         status = "refused"
         raise
     finally:
-        _audit_question(request_id, thread_id, req.question, started, status, out)
+        _audit_question(user, request_id, thread_id, req.question, started, status, out)
     return AskResponse(
         answer=out.get("answer", ""),
         route=out.get("route", ""),
@@ -241,15 +247,15 @@ def ask(req: AskRequest):
     )
 
 
-@api.post("/ask/stream", dependencies=[Depends(require_api_key)])
-def ask_stream(req: AskRequest):
+@api.post("/ask/stream")
+def ask_stream(req: AskRequest, user: User = Depends(require_user)):
     """SSE : `step` (file d'attente ou noeud termine), `token` (generation), `done` (reponse finale) ou `error`."""
     from app.graph import get_graph, make_input
 
     thread_id = req.thread_id or str(uuid.uuid4())
     request_id = str(uuid.uuid4())
     graph = get_graph()
-    config = run_config(thread_id)
+    config = run_config(thread_key(user, thread_id))
 
     def sse(event: str, data: dict) -> str:
         return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -294,7 +300,7 @@ def ask_stream(req: AskRequest):
             logging.exception("Erreur pendant /ask/stream")
             yield sse("error", {"message": str(e)[:300]})
         finally:
-            _audit_question(request_id, thread_id, req.question, started, status, final)
+            _audit_question(user, request_id, thread_id, req.question, started, status, final)
 
     return StreamingResponse(events(), media_type="text/event-stream")
 

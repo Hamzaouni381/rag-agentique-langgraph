@@ -56,7 +56,8 @@ class Settings(BaseSettings):
     langfuse_base_url: str = "https://cloud.langfuse.com"  # region UE ; ou l'URL d'un Langfuse auto-heberge
 
     # --- API ---
-    api_key: str = ""             # si defini, exige l'en-tete X-API-Key
+    api_key: str = ""             # compte de service : scripts et tests (en-tete X-API-Key)
+    auth_mode: Literal["none", "easyauth"] = "none"  # easyauth : connexion Entra geree par Container Apps
     preload_models: bool = False  # charge les modeles au demarrage ; /api/ready repond 503 d'ici la
     max_upload_mb: int = 25
 

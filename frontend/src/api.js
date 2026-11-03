@@ -28,6 +28,16 @@ async function authFetch(url, options = {}) {
     fetch(url, { ...options, headers: { ...options.headers, ...(apiKey ? { "X-API-Key": apiKey } : {}) } });
   const res = await call();
   if (res.status !== 401) return res;
+  // Connexion par compte active : le serveur indique ou se connecter.
+  const loginUrl = await res
+    .clone()
+    .json()
+    .then((body) => body.detail?.login_url)
+    .catch(() => null);
+  if (loginUrl) {
+    window.location.assign(loginUrl);
+    return new Promise(() => {}); // la page change : rien d'autre a afficher
+  }
   const entered = window.prompt("Clé d'accès à l'API :")?.trim();
   if (!entered) return res;
   saveApiKey(entered);
@@ -49,6 +59,7 @@ async function request(path, options = {}) {
 }
 
 export const getHealth = () => request("/health");
+export const getMe = () => request("/me");
 export const listDocuments = () => request("/documents");
 export const deleteDocument = (name) => request(`/documents/${encodeURIComponent(name)}`, { method: "DELETE" });
 

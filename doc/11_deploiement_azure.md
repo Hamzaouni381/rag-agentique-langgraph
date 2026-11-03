@@ -18,6 +18,7 @@ Section tenue à jour à chaque intervention. N'y figure que ce qui a été vér
 | 03/11/2026 | Défaut constaté | Le modèle déforme parfois un résumé : sur un essai, « avoir de 50 % » est devenu « réduction de 50 % », et « sur demande sous 60 jours » est devenu « demande d'explication » |
 | 03/11/2026 | 10 questions simultanées | 10 réussites sur 10 en 54 s, attente maximale 54 s ([chapitre 12](12_production_entreprise.md)) |
 | 03/11/2026 | Mise à jour pendant l'utilisation | 64 questions envoyées en continu, 64 réponses HTTP 200, sur un seul essai |
+| 03/11/2026 | Connexion par compte (lot 2) | Code et tests prêts, **non déployés**. En attente de `infra\setup_entra.ps1`, à lancer par l'administrateur de l'annuaire |
 | 03/11/2026 | Non mesuré | Le réveil complet après mise en veille |
 
 ## 11.1 Ce qu'on déploie

@@ -41,7 +41,7 @@ Mesures du 03/11/2026 sur Azure : 4 vCPU au total, sans GPU, corpus de démonstr
 | Lot | Contenu | Coût Azure en plus | État |
 |---|---|---|---|
 | **1. Exploitation** | File d'attente, audit, mise à jour sans coupure, délais maximum | Quasi nul | **Fait** |
-| **2. Identité** | Connexion par compte Microsoft, rôles, audit nominatif, documents cloisonnés | Aucun | À faire |
+| **2. Identité** | Connexion par compte Microsoft, rôles, audit nominatif, documents cloisonnés | Aucun | En cours : code prêt hors cloisonnement des documents, non déployé |
 | **3. Qualité** | Modèle CPU choisi par mesure, contrôle des réponses, évaluation en CI, retours utilisateurs | Faible | À faire |
 | **4. Sécurité** | Key Vault, identité managée, réseau privé, défense contre l'injection de prompt | Faible | À faire |
 | **5. Livraison** | Déploiement automatique, préproduction, retour arrière, alertes, test de restauration | Quasi nul | À faire |

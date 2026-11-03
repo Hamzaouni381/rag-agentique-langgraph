@@ -24,10 +24,18 @@ param postgresPassword string
 param readerPassword string
 
 @secure()
-@description('Cle exigee par l\'API dans l\'en-tete X-API-Key.')
+@description('Cle du compte de service (scripts et tests), en-tete X-API-Key.')
 param apiKey string
 
+@description('Application Entra de la connexion (infra/setup_entra.ps1). Vide : pas de connexion par compte.')
+param authClientId string = ''
+
+@secure()
+@description('Secret de l\'application Entra.')
+param authClientSecret string = ''
+
 var suffix = uniqueString(resourceGroup().id)
+var authEnabled = !empty(authClientId)
 
 // --- PostgreSQL ---
 resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
@@ -173,7 +181,12 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         external: true
         targetPort: 8000
       }
-      secrets: [
+      secrets: concat(authEnabled ? [
+        {
+          name: 'microsoft-provider-authentication-secret'
+          value: authClientSecret
+        }
+      ] : [], [
         {
           name: 'database-url'
           value: 'postgresql+psycopg://rag:${postgresPassword}@${postgres.properties.fullyQualifiedDomainName}:5432/${database.name}?sslmode=require'
@@ -186,7 +199,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'api-key'
           value: apiKey
         }
-      ]
+      ])
     }
     template: {
       terminationGracePeriodSeconds: 120 // laisse finir les reponses en cours lors d'une mise a jour
@@ -205,6 +218,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'DATABASE_URL', secretRef: 'database-url' }
             { name: 'READER_DATABASE_URL', secretRef: 'reader-database-url' }
             { name: 'API_KEY', secretRef: 'api-key' }
+            { name: 'AUTH_MODE', value: authEnabled ? 'easyauth' : 'none' }
             { name: 'HF_HUB_OFFLINE', value: '1' } // modeles deja dans l'image
             { name: 'RETRIEVE_K', value: '10' } // le rerank sur CPU coute ~0,65 s par candidat a 2 vCPU
             { name: 'PRELOAD_MODELS', value: 'true' } // une nouvelle version ne recoit du trafic qu'une fois prete
@@ -262,6 +276,37 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
     }
   }
   dependsOn: [allowAzureServices]
+}
+
+// Connexion Microsoft Entra geree par la plateforme. AllowAnonymous : l'application decide elle-meme
+// (scripts avec cle API, /api/live, /api/ready) et renvoie 401 avec l'adresse de connexion.
+resource auth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (authEnabled) {
+  parent: app
+  name: 'current'
+  properties: {
+    platform: {
+      enabled: true
+    }
+    globalValidation: {
+      unauthenticatedClientAction: 'AllowAnonymous'
+    }
+    identityProviders: {
+      azureActiveDirectory: {
+        enabled: true
+        registration: {
+          clientId: authClientId
+          clientSecretSettingName: 'microsoft-provider-authentication-secret'
+          openIdIssuer: '${az.environment().authentication.loginEndpoint}${tenant().tenantId}/v2.0'
+        }
+        validation: {
+          allowedAudiences: [authClientId]
+        }
+      }
+    }
+    httpSettings: {
+      requireHttps: true
+    }
+  }
 }
 
 output appUrl string = 'https://${app.properties.configuration.ingress.fqdn}'
