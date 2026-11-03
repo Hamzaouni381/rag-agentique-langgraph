@@ -8,10 +8,12 @@ Section tenue à jour à chaque intervention. N'y figure que ce qui a été vér
 
 | Date | Élément | État |
 |---|---|---|
-| 03/11/2026 | Abonnement Azure | `Azure for Students`, `Enabled` |
-| 03/11/2026 | Ressources sur Azure | **Aucune : l'application n'est pas encore en ligne** (`az resource list` vide) |
-| 03/11/2026 | LLM | Passage d'Azure OpenAI (bloqué par `715-123420`) à **Ollama dans un conteneur voisin de l'API** |
-| 03/11/2026 | Image API | Publiée par la CI, téléchargeable sans identifiants |
+| 03/11/2026 | Application | **En ligne** : [rag-agentique.redground-2b9d1e76.spaincentral.azurecontainerapps.io](https://rag-agentique.redground-2b9d1e76.spaincentral.azurecontainerapps.io) |
+| 03/11/2026 | Azure | Groupe `rg-rag-agentique`, région `spaincentral`, déploiement `Succeeded`, base initialisée, pare-feu refermé |
+| 03/11/2026 | Images déployées | Tags `48dc93c2…` (API) et `ollama-48dc93c2…` (Ollama) |
+| 03/11/2026 | LLM | Ollama `qwen2.5:1.5b` dans un conteneur voisin de l'API, à la place d'Azure OpenAI (bloqué par `715-123420`) |
+| 03/11/2026 | Tests en production | Santé OK, `401` sans clé, 3 fichiers de `samples/` déposés en 9 s, questions documents et SQL correctes, streaming OK |
+| 03/11/2026 | Temps de réponse mesurés | Application déjà réveillée : 3 à 7 s ; première question après chargement des modèles : 17 s |
 
 ## 11.1 Ce qu'on déploie
 
@@ -28,6 +30,7 @@ Tout est décrit dans [infra/main.bicep](../infra/main.bicep) : c'est de l'**Inf
 | Choix | Pourquoi | Pourquoi pas l'alternative |
 |---|---|---|
 | **Container Apps**, 0 à 1 réplique | Aucun coût de calcul au repos. Une seule réplique car l'index BM25 vit en mémoire. | App Service : facturé en continu. Une VM : à administrer soi-même. |
+| **`environmentMode: WorkloadProfiles`** | Azure Files et les conteneurs voisins en ont besoin. | Sans ce réglage, Azure crée un environnement **Express**, qui n'accepte ni l'un ni l'autre. La valeur `Standard` est refusée. |
 | **PostgreSQL managé** | pgvector disponible, sauvegardes incluses, même code qu'en local. | Postgres dans un conteneur : données perdues à la mise en veille, et Azure Files (SMB) ne convient pas à un moteur de base de données. |
 | **Ollama, `qwen2.5:1.5b`, en sidecar** | Aucune dépendance à Azure OpenAI, dont le déploiement a été bloqué (`715-123420`). Même modèle et même code qu'en local. Les données restent dans le conteneur. | Azure OpenAI `gpt-4.1-mini` : bien plus rapide et moins cher à l'usage, mais bloqué sur cet abonnement au 02/11/2026. Ollama sur le PC exposé par un tunnel : l'application dépendrait d'un PC allumé. |
 | **ghcr.io** pour l'image | Gratuit, construit par GitHub : pas d'envoi lourd depuis le PC. | ACR : 5 $/mois, et `az acr build` est interdit sur les abonnements étudiants. |
@@ -232,6 +235,8 @@ az group delete -n $RG --yes
 
 | Symptôme | Cause | Solution |
 |---|---|---|
+| `ExpressEnvironmentResourceNotSupported` | Environnement créé en mode Express, sans `environmentMode` dans le Bicep | Garder `environmentMode: 'WorkloadProfiles'`. Le mode d'un environnement existant ne se change pas : le supprimer avec `az containerapp env delete`, puis relancer l'étape 4 |
+| `ManagedEnvironmentModeNotSupported` sur `Standard` | Valeur trompeuse : ce mode n'existe pas sous ce nom | Utiliser `WorkloadProfiles` |
 | `ServerIsBusy` pendant le déploiement | Postgres traite encore une opération | Attendre 2 minutes et relancer la même commande : elle reprend là où elle en était |
 | `ConnectionResetError`, `broken pipe` | Réseau local | L'opération a souvent réussi côté Azure : vérifier avec `az deployment group show` avant de relancer |
 | Échec du déploiement sur l'image | Image privée ou tag inexistant | Refaire la vérification de l'étape 2 |
@@ -247,8 +252,8 @@ az group delete -n $RG --yes
 
 - **La base est joignable depuis tout service Azure** (règle `0.0.0.0`) : seuls le mot de passe et TLS la protègent. La bonne réponse en production est un VNet et un accès privé, écartés ici pour le coût et la complexité.
 - **Une seule clé API partagée** : suffisant pour une démo, pas pour de vrais utilisateurs. La suite serait une authentification Microsoft Entra.
-- **Démarrage à froid**, prix du scale-to-zero : téléchargement des deux images, puis environ 40 s pour charger les modèles d'embedding et de rerank et 15 à 20 s pour charger le LLM (mesurés en conteneur limité à 2 vCPU). Réveille l'application et pose une question avant une démo.
-- **Le LLM est lent sur CPU.** Mesures en conteneur limité à 2 vCPU sur le PC de développement : 7,6 tokens/s en génération et 17 tokens/s pour lire un long prompt. Un contexte de 1 966 tokens avec 256 tokens générés prend 149 s ; une question courante consomme environ 900 tokens au total. Passer à 3 vCPU ne change presque rien en génération (7,7 tokens/s).
+- **Démarrage à froid**, prix du scale-to-zero : téléchargement des deux images (1,95 et 2,30 Go compressés), puis environ 40 s pour charger les modèles d'embedding et de rerank et 15 à 20 s pour charger le LLM (mesurés en conteneur limité à 2 vCPU). Réveille l'application et pose une question avant une démo.
+- **Le LLM tourne sur CPU.** Sur Azure, les questions du corpus de démonstration répondent en 3 à 7 s, application réveillée (quelques mesures seulement, à consolider avec `eval/run_eval.py`). Un long contexte reste bien plus lent : sur le PC de développement limité à 2 vCPU, 1 966 tokens de contexte et 256 générés prennent 149 s. Des documents plus longs rapprocheront donc les réponses de la limite de 240 s.
 - **`LLM_NUM_THREAD` doit valoir le quota CPU du conteneur.** Sans ce réglage, Ollama lance trop de threads pour le quota : la même mesure passe de 149 à 174 s.
 - **Le rerank tourne sur CPU** : environ 0,65 s par candidat à 2 vCPU. D'où `RETRIEVE_K=10` en cloud, contre 20 en local, au prix d'un rappel potentiellement plus faible : à re-mesurer avec `eval/run_eval.py`.
 - **Une seule question à la fois en pratique** : le modèle occupe les 2 vCPU de son conteneur, et une seule réplique existe.
