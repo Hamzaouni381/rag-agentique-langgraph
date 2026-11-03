@@ -185,7 +185,7 @@ demarrer.bat        lancement en un double-clic
 
 ## Déploiement Azure
 
-Container Apps (scale-to-zero), PostgreSQL Flexible Server avec pgvector, Azure OpenAI et Azure Files, décrits en Bicep. Guide commande par commande, coûts et dépannage : [doc/11_deploiement_azure.md](doc/11_deploiement_azure.md).
+Container Apps (scale-to-zero), PostgreSQL Flexible Server avec pgvector, Ollama en conteneur voisin de l'API et Azure Files, décrits en Bicep. Guide commande par commande, coûts et dépannage : [doc/11_deploiement_azure.md](doc/11_deploiement_azure.md).
 
 ## Pistes suivantes
 - Version async (`ainvoke`, `AsyncPostgresSaver`) pour la montée en charge de l'API.

@@ -1,15 +1,19 @@
 // Infrastructure Azure du RAG agentique. Guide pas a pas : doc/11_deploiement_azure.md
 //
-//   Internet --> Container App (API + interface, 0 a 1 replique)
+//   Internet --> Container App (0 a 1 replique)
+//                  |-- conteneur api    (API + interface)
+//                  |-- conteneur ollama (LLM, joint sur localhost)
 //                  |--> PostgreSQL Flexible Server (pgvector, tables, memoire)
-//                  |--> Azure OpenAI (LLM)
 //                  '--> Azure Files (documents deposes, /app/data)
 
 @description('Region autorisee par l\'abonnement ou Postgres n\'est pas restreint.')
 param location string = 'spaincentral'
 
-@description('Image publiee par la CI, ex. ghcr.io/owner/repo:<sha>')
+@description('Image de l\'API publiee par la CI, ex. ghcr.io/owner/repo:<sha>')
 param image string
+
+@description('Image Ollama publiee par la CI, ex. ghcr.io/owner/repo:ollama-<sha>')
+param ollamaImage string
 
 @secure()
 @description('Mot de passe de l\'administrateur Postgres (role rag).')
@@ -24,7 +28,6 @@ param readerPassword string
 param apiKey string
 
 var suffix = uniqueString(resourceGroup().id)
-var llmDeploymentName = 'gpt-4.1-mini'
 
 // --- PostgreSQL ---
 resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
@@ -80,36 +83,6 @@ resource allowAzureServices 'Microsoft.DBforPostgreSQL/flexibleServers/firewallR
     endIpAddress: '0.0.0.0'
   }
   dependsOn: [database]
-}
-
-// --- Azure OpenAI ---
-resource openai 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
-  name: 'oai-rag-${suffix}'
-  location: location
-  kind: 'OpenAI'
-  sku: {
-    name: 'S0'
-  }
-  properties: {
-    customSubDomainName: 'oai-rag-${suffix}'
-    publicNetworkAccess: 'Enabled'
-  }
-}
-
-resource llm 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
-  parent: openai
-  name: llmDeploymentName
-  sku: {
-    name: 'GlobalStandard'
-    capacity: 10 // 10 000 tokens/min (~900 par question) : assez pour une demo, plafonne aussi la depense
-  }
-  properties: {
-    model: {
-      format: 'OpenAI'
-      name: 'gpt-4.1-mini'
-      version: '2025-04-14'
-    }
-  }
 }
 
 // --- Azure Files : le disque d'un conteneur est perdu a chaque mise en veille ---
@@ -202,10 +175,6 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           value: 'postgresql+psycopg://rag_reader:${readerPassword}@${postgres.properties.fullyQualifiedDomainName}:5432/${database.name}?sslmode=require'
         }
         {
-          name: 'openai-api-key'
-          value: openai.listKeys().key1
-        }
-        {
           name: 'api-key'
           value: apiKey
         }
@@ -221,11 +190,9 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             memory: '4Gi'
           }
           env: [
-            { name: 'LLM_PROVIDER', value: 'openai' }
-            { name: 'OPENAI_MODEL', value: llm.name }
-            // Endpoint Azure compatible OpenAI : aucun changement de code par rapport a l'API OpenAI.
-            { name: 'OPENAI_BASE_URL', value: '${openai.properties.endpoint}openai/v1/' }
-            { name: 'OPENAI_API_KEY', secretRef: 'openai-api-key' }
+            { name: 'LLM_PROVIDER', value: 'ollama' }
+            { name: 'OLLAMA_BASE_URL', value: 'http://localhost:11434' } // meme replica : localhost partage
+            { name: 'LLM_NUM_THREAD', value: '2' } // = quota CPU du conteneur ollama (sinon throttling)
             { name: 'DATABASE_URL', secretRef: 'database-url' }
             { name: 'READER_DATABASE_URL', secretRef: 'reader-database-url' }
             { name: 'API_KEY', secretRef: 'api-key' }
@@ -238,6 +205,14 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               mountPath: '/app/data'
             }
           ]
+        }
+        {
+          name: 'ollama'
+          image: ollamaImage
+          resources: {
+            cpu: json('2.0') // 2 + 2 vCPU = maximum d'une replique en Consumption
+            memory: '4Gi' // 1,25 Gio mesures, modele charge
+          }
         }
       ]
       scale: {

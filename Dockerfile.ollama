@@ -1,0 +1,19 @@
+# Conteneur LLM du deploiement Azure : Ollama et son modele, sans les bibliotheques GPU.
+# Modele dans l'image : en cloud (scale-to-zero, disque ephemere) rien a retelecharger au reveil.
+FROM ollama/ollama:0.40.14 AS build
+RUN ollama serve & sleep 5 && ollama pull qwen2.5:1.5b
+RUN rm -rf /usr/lib/ollama/cuda_* /usr/lib/ollama/rocm* /usr/lib/ollama/vulkan*
+
+# Image repartie de zero : les couches de l'image de base contiennent encore les ~3 Go de GPU.
+FROM ubuntu:24.04
+COPY --from=build /usr/bin/ollama /usr/bin/ollama
+COPY --from=build /usr/lib/ollama /usr/lib/ollama
+COPY --from=build /root/.ollama/models /root/.ollama/models
+ENV LD_LIBRARY_PATH=/usr/lib/ollama
+# Le build echoue si le modele ne repond pas. L'image est publique : on retire la cle generee par Ollama.
+RUN ollama serve >/dev/null 2>&1 & sleep 5 && timeout 300 ollama run qwen2.5:1.5b "Reponds ok" && rm -f /root/.ollama/id_ed25519* /root/.ollama/history
+# OLLAMA_HOST non defini : ecoute sur 127.0.0.1, seule l'API du meme replica peut le joindre.
+# KEEP_ALIVE=-1 : le modele reste charge tant que le replica vit (rechargement : ~15 s).
+ENV OLLAMA_KEEP_ALIVE=-1
+ENTRYPOINT ["/usr/bin/ollama"]
+CMD ["serve"]

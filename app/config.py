@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.1
     llm_num_ctx: int = 4096
     llm_max_tokens: int = 768     # plafond de generation (sans lui un petit modele peut boucler)
+    llm_num_thread: int | None = None  # Ollama : a fixer au quota CPU d'un conteneur (sinon throttling)
 
     # --- Embeddings : "huggingface" (local, gratuit) ou "openai" ---
     embedding_provider: Literal["huggingface", "openai"] = "huggingface"

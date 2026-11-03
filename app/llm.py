@@ -23,6 +23,7 @@ def get_chat_model() -> BaseChatModel:
         temperature=s.llm_temperature,
         num_ctx=s.llm_num_ctx,
         num_predict=s.llm_max_tokens,
+        num_thread=s.llm_num_thread,
     )
 
 

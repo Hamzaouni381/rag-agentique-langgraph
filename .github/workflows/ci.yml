@@ -50,3 +50,14 @@ jobs:
             ${{ env.IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max,ignore-error=true
+      - name: Build de l'image Ollama (meme paquet ghcr, tag ollama-*)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.ollama
+          push: ${{ github.event_name == 'push' }}
+          tags: |
+            ${{ env.IMAGE }}:ollama-${{ github.sha }}
+            ${{ env.IMAGE }}:ollama-latest
+          cache-from: type=gha,scope=ollama
+          cache-to: type=gha,scope=ollama,mode=max,ignore-error=true
