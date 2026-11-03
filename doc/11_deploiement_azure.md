@@ -14,7 +14,9 @@ Section tenue à jour à chaque intervention. N'y figure que ce qui a été vér
 | 03/11/2026 | LLM | Ollama `qwen2.5:1.5b` dans un conteneur voisin de l'API, à la place d'Azure OpenAI (bloqué par `715-123420`) |
 | 03/11/2026 | Tests en production | Santé OK, `401` sans clé, 3 fichiers de `samples/` déposés en 9 s, questions documents et SQL correctes, streaming OK |
 | 03/11/2026 | Temps de réponse mesurés | Application déjà réveillée : 3 à 8 s pour une question, 8 à 20 s pour un résumé ; première question après chargement des modèles : 17 s |
-| 03/11/2026 | Non mesuré | Le réveil complet après mise en veille |
+| 03/11/2026 | Résumés | En ligne et testés : « résumé le document reglement T2 » répond, et une demande sans document identifiable demande lequel résumer |
+| 03/11/2026 | Défaut constaté | Le modèle déforme parfois un résumé : sur un essai, « avoir de 50 % » est devenu « réduction de 50 % », et « sur demande sous 60 jours » est devenu « demande d'explication » |
+| 03/11/2026 | Non mesuré | Le réveil complet après mise en veille ; 10 utilisateurs simultanés |
 
 ## 11.1 Ce qu'on déploie
 
@@ -215,7 +217,7 @@ Ouvre ensuite `$URL` dans le navigateur. L'interface demande la clé une seule f
 | Besoin | Commande |
 |---|---|
 | Publier une nouvelle version | `git push`, attendre la CI, puis `az containerapp update -g $RG -n rag-agentique --container-name api --image "ghcr.io/hamzaouni381/rag-agentique-langgraph:$(git rev-parse HEAD)"` |
-| Voir les journaux | `az containerapp logs show -g $RG -n rag-agentique --container api --tail 100` (ou `--container ollama` ; en cas d'`UnicodeEncodeError` sous Windows : `$env:PYTHONUTF8 = 1`) |
+| Voir les journaux | Portail Azure, Container App, **Journaux**, avec la requête `union isfuzzy=true ContainerAppConsoleLogs_CL, ContainerAppConsoleLogs \| where TimeGenerated > ago(1h) \| order by TimeGenerated asc`. Compter quelques minutes de retard. `az containerapp logs show` plante sous Windows (`UnicodeEncodeError`) sur les barres de progression du chargement des modèles, même avec `PYTHONUTF8=1` |
 | État des révisions | `az containerapp revision list -g $RG -n rag-agentique -o table` |
 | **Couper la base** (économie) | `az postgres flexible-server stop -g $RG -n $PG_NAME` |
 | Rallumer la base avant une démo | `az postgres flexible-server start -g $RG -n $PG_NAME` (quelques minutes) |
@@ -238,6 +240,7 @@ az group delete -n $RG --yes
 |---|---|---|
 | `ExpressEnvironmentResourceNotSupported` | Environnement créé en mode Express, sans `environmentMode` dans le Bicep | Garder `environmentMode: 'WorkloadProfiles'`. Le mode d'un environnement existant ne se change pas : le supprimer avec `az containerapp env delete`, puis relancer l'étape 4 |
 | `ManagedEnvironmentModeNotSupported` sur `Standard` | Valeur trompeuse : ce mode n'existe pas sous ce nom | Utiliser `WorkloadProfiles` |
+| `Internal Server Error` juste après `az containerapp update` | La commande rend la main avant la bascule : l'ancienne version peut être arrêtée pendant qu'elle répond | Attendre une à deux minutes et reposer la question. Avant une démo, ne pas publier de version juste avant |
 | `ServerIsBusy` pendant le déploiement | Postgres traite encore une opération | Attendre 2 minutes et relancer la même commande : elle reprend là où elle en était |
 | `ConnectionResetError`, `broken pipe` | Réseau local | L'opération a souvent réussi côté Azure : vérifier avec `az deployment group show` avant de relancer |
 | Échec du déploiement sur l'image | Image privée ou tag inexistant | Refaire la vérification de l'étape 2 |
@@ -255,6 +258,8 @@ az group delete -n $RG --yes
 - **Une seule clé API partagée** : suffisant pour une démo, pas pour de vrais utilisateurs. La suite serait une authentification Microsoft Entra.
 - **Démarrage à froid**, prix du scale-to-zero : téléchargement des deux images (1,95 et 2,30 Go compressés), puis environ 40 s pour charger les modèles d'embedding et de rerank et 15 à 20 s pour charger le LLM (mesurés en conteneur limité à 2 vCPU). Réveille l'application et pose une question avant une démo.
 - **Le LLM tourne sur CPU.** Sur Azure, les questions du corpus de démonstration répondent en 3 à 7 s, application réveillée (quelques mesures seulement, à consolider avec `eval/run_eval.py`). Un long contexte reste bien plus lent : sur le PC de développement limité à 2 vCPU, 1 966 tokens de contexte et 256 générés prennent 149 s. Des documents plus longs rapprocheront donc les réponses de la limite de 240 s.
+- **Petit modèle, résumés à relire.** `qwen2.5:1.5b` peut déformer un terme ou une condition (voir « Défaut constaté » dans l'état actuel). Pour un usage réel, il faudrait un modèle plus capable et une évaluation des résumés.
+- **Courte interruption à chaque nouvelle version** : une requête en cours pendant la bascule peut échouer. Ce cas a été observé une fois, et les journaux montrent que la nouvelle version n'a jamais reçu cette requête.
 - **`LLM_NUM_THREAD` doit valoir le quota CPU du conteneur.** Sans ce réglage, Ollama lance trop de threads pour le quota : la même mesure passe de 149 à 174 s.
 - **Le rerank tourne sur CPU** : environ 0,65 s par candidat à 2 vCPU. D'où `RETRIEVE_K=10` en cloud, contre 20 en local, au prix d'un rappel potentiellement plus faible : à re-mesurer avec `eval/run_eval.py`.
 - **Une seule question à la fois en pratique** : le modèle occupe les 2 vCPU de son conteneur, et une seule réplique existe.
