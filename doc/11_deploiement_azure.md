@@ -10,7 +10,7 @@ Section tenue à jour à chaque intervention. N'y figure que ce qui a été vér
 |---|---|---|
 | 03/11/2026 | Application | **En ligne** : [rag-agentique.redground-2b9d1e76.spaincentral.azurecontainerapps.io](https://rag-agentique.redground-2b9d1e76.spaincentral.azurecontainerapps.io) |
 | 03/11/2026 | Azure | Groupe `rg-rag-agentique`, région `spaincentral`, déploiement `Succeeded`, base initialisée, pare-feu refermé |
-| 03/11/2026 | Images déployées | Tags `35a00a0f…` (API) et `ollama-35a00a0f…` (Ollama), révision `rag-agentique--0000003`. Valeur à jour : `az containerapp show -g rg-rag-agentique -n rag-agentique --query "properties.template.containers[].image"` |
+| 03/11/2026 | Images déployées | Tags `513e2295…` (API) et `ollama-513e2295…` (Ollama). Valeur à jour : `az containerapp show -g rg-rag-agentique -n rag-agentique --query "properties.template.containers[].image"` |
 | 03/11/2026 | LLM | Ollama `qwen2.5:1.5b` dans un conteneur voisin de l'API, à la place d'Azure OpenAI (bloqué par `715-123420`) |
 | 03/11/2026 | Tests en production | Santé OK, `401` sans clé, 3 fichiers de `samples/` déposés en 9 s, questions documents et SQL correctes, streaming OK |
 | 03/11/2026 | Temps de réponse mesurés | Application déjà réveillée : 3 à 8 s pour une question, 8 à 20 s pour un résumé ; première question après chargement des modèles : 17 s |
@@ -18,7 +18,7 @@ Section tenue à jour à chaque intervention. N'y figure que ce qui a été vér
 | 03/11/2026 | Défaut constaté | Le modèle déforme parfois un résumé : sur un essai, « avoir de 50 % » est devenu « réduction de 50 % », et « sur demande sous 60 jours » est devenu « demande d'explication » |
 | 03/11/2026 | 10 questions simultanées | 10 réussites sur 10 en 54 s, attente maximale 54 s ([chapitre 12](12_production_entreprise.md)) |
 | 03/11/2026 | Mise à jour pendant l'utilisation | 64 questions envoyées en continu, 64 réponses HTTP 200, sur un seul essai |
-| 03/11/2026 | Connexion par compte (lot 2) | Code et tests prêts, **non déployés**. En attente de `infra\setup_entra.ps1`, à lancer par l'administrateur de l'annuaire |
+| 03/11/2026 | Connexion par compte (lot 2) | Déployée, révision `rag-agentique--0000004`. Vérifié sur le site : `401` sans identité, `401` avec un faux en-tête d'identité, redirection vers le bon annuaire. **Connexion réelle dans un navigateur à valider** |
 | 03/11/2026 | Non mesuré | Le réveil complet après mise en veille |
 
 ## 11.1 Ce qu'on déploie
@@ -133,7 +133,7 @@ $RG = 'rg-rag-agentique'
 $RG = 'rg-rag-agentique'
 az group create -n $RG -l spaincentral
 
-$params = @("image=$IMAGE", "ollamaImage=$OLLAMA_IMAGE", "postgresPassword=$PG_PASSWORD", "readerPassword=$READER_PASSWORD", "apiKey=$API_KEY")
+$params = @("image=$IMAGE", "ollamaImage=$OLLAMA_IMAGE", "postgresPassword=$PG_PASSWORD", "readerPassword=$READER_PASSWORD", "apiKey=$API_KEY", "authClientId=$AUTH_CLIENT_ID", "authClientSecret=$AUTH_CLIENT_SECRET")
 
 # Simulation : affiche ce qui serait créé, sans rien créer ni facturer
 az deployment group what-if -g $RG -f infra\main.bicep -p $params
@@ -211,7 +211,29 @@ Ask "Quel est le retard total cumule sur la ligne T2 ?"
 
 **Attendu** : une route `documents` avec des sources pour la première question, une route `database` avec la requête générée pour la seconde. Des accents déformés (`supÃ©rieur`) dans PowerShell 5.1 viennent de l'affichage de `Invoke-RestMethod`, pas de l'application.
 
-Ouvre ensuite `$URL` dans le navigateur. L'interface demande la clé une seule fois (affiche-la avec `$API_KEY`) puis la garde dans ce navigateur. La clé n'est jamais écrite dans le JavaScript publié.
+Ouvre ensuite `$URL` dans le navigateur et connecte-toi avec ton compte Microsoft (section suivante). La clé `$API_KEY` sert aux scripts et aux tests : elle est enregistrée dans l'audit sous le nom `service:cle-api`.
+
+### La connexion par compte
+
+**Mise en place, une seule fois**, par un administrateur de l'annuaire. Le script vérifie l'annuaire, crée l'application `rag-agentique` et ses rôles, et attribue le rôle admin à la personne qui le lance. Le déploiement de l'étape 4 lit ensuite `$AUTH_CLIENT_ID` et `$AUTH_CLIENT_SECRET` dans `infra\.secrets.ps1`.
+
+```
+powershell -ExecutionPolicy Bypass -File infra\setup_entra.ps1
+```
+
+**Ajouter une personne :**
+
+1. Portail Azure, **Microsoft Entra ID**, **Utilisateurs**, **Inviter un utilisateur externe**.
+2. **Applications d'entreprise**, `rag-agentique`, **Utilisateurs et groupes**, **Ajouter un utilisateur/groupe**, puis choisir le rôle.
+
+Sans rôle attribué, la personne ne peut pas se connecter. Le secret de l'application expire au bout d'un an : relancer `az ad app credential reset`, mettre à jour `infra\.secrets.ps1`, puis redéployer.
+
+| Rôle | Droits |
+|---|---|
+| `admin` | Questions, ajout et suppression de documents, journal d'audit |
+| `user` | Questions et liste des documents |
+
+**Pourquoi l'en-tête d'identité est sûr :** `X-MS-CLIENT-PRINCIPAL` n'est lu qu'avec `AUTH_MODE=easyauth`. Devant l'application, la plateforme ne laisse pas passer un en-tête forgé : testé sur le site, il reçoit un `401`.
 
 **Dépose uniquement les fichiers de `samples/` :** l'application est sur Internet, et les fichiers de `data/documents` en local peuvent être personnels.
 
@@ -260,7 +282,8 @@ az group delete -n $RG --yes
 ## 11.11 Limites à connaître (et à dire en entretien)
 
 - **La base est joignable depuis tout service Azure** (règle `0.0.0.0`) : seuls le mot de passe et TLS la protègent. La bonne réponse en production est un VNet et un accès privé, écartés ici pour le coût et la complexité.
-- **Une seule clé API partagée** : suffisant pour une démo, pas pour de vrais utilisateurs. La suite serait une authentification Microsoft Entra.
+- **Documents non cloisonnés** : tout utilisateur connecté interroge tous les documents. La suite serait un filtre par équipe dans la recherche.
+- **Secret d'application à renouveler chaque année** : une identité managée éviterait cette tâche (lot 4).
 - **Démarrage à froid**, prix du scale-to-zero : téléchargement des deux images (1,95 et 2,30 Go compressés), puis environ 40 s pour charger les modèles d'embedding et de rerank et 15 à 20 s pour charger le LLM (mesurés en conteneur limité à 2 vCPU). Réveille l'application et pose une question avant une démo.
 - **Le LLM tourne sur CPU.** Sur Azure, les questions du corpus de démonstration répondent en 3 à 7 s, application réveillée (quelques mesures seulement, à consolider avec `eval/run_eval.py`). Un long contexte reste bien plus lent : sur le PC de développement limité à 2 vCPU, 1 966 tokens de contexte et 256 générés prennent 149 s. Des documents plus longs rapprocheront donc les réponses de la limite de 240 s.
 - **Petit modèle, résumés à relire.** `qwen2.5:1.5b` peut déformer un terme ou une condition (voir « Défaut constaté » dans l'état actuel). Pour un usage réel, il faudrait un modèle plus capable et une évaluation des résumés.
