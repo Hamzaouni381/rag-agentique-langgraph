@@ -189,6 +189,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
       ]
     }
     template: {
+      terminationGracePeriodSeconds: 120 // laisse finir les reponses en cours lors d'une mise a jour
       containers: [
         {
           name: 'api'
@@ -206,6 +207,30 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'API_KEY', secretRef: 'api-key' }
             { name: 'HF_HUB_OFFLINE', value: '1' } // modeles deja dans l'image
             { name: 'RETRIEVE_K', value: '10' } // le rerank sur CPU coute ~0,65 s par candidat a 2 vCPU
+            { name: 'PRELOAD_MODELS', value: 'true' } // une nouvelle version ne recoit du trafic qu'une fois prete
+          ]
+          probes: [
+            {
+              type: 'Startup'
+              httpGet: { path: '/api/ready', port: 8000 }
+              periodSeconds: 5
+              failureThreshold: 48 // 4 minutes pour charger les modeles
+              timeoutSeconds: 5
+            }
+            {
+              type: 'Readiness'
+              httpGet: { path: '/api/ready', port: 8000 }
+              periodSeconds: 10
+              failureThreshold: 3
+              timeoutSeconds: 5
+            }
+            {
+              type: 'Liveness'
+              httpGet: { path: '/api/live', port: 8000 }
+              periodSeconds: 30
+              failureThreshold: 5 // le CPU peut etre sature par le LLM : pas de redemarrage trop rapide
+              timeoutSeconds: 10
+            }
           ]
           volumeMounts: [
             {

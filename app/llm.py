@@ -14,7 +14,11 @@ def get_chat_model() -> BaseChatModel:
     s = get_settings()
     if s.llm_provider == "openai":
         return init_chat_model(
-            s.openai_model, model_provider="openai", temperature=s.llm_temperature, max_tokens=s.llm_max_tokens
+            s.openai_model,
+            model_provider="openai",
+            temperature=s.llm_temperature,
+            max_tokens=s.llm_max_tokens,
+            timeout=s.llm_timeout_seconds,
         )
     return init_chat_model(
         s.ollama_model,
@@ -24,6 +28,7 @@ def get_chat_model() -> BaseChatModel:
         num_ctx=s.llm_num_ctx,
         num_predict=s.llm_max_tokens,
         num_thread=s.llm_num_thread,
+        client_kwargs={"timeout": s.llm_timeout_seconds},
     )
 
 

@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     llm_num_ctx: int = 4096
     llm_max_tokens: int = 768     # plafond de generation (sans lui un petit modele peut boucler)
     llm_num_thread: int | None = None  # Ollama : a fixer au quota CPU d'un conteneur (sinon throttling)
+    llm_timeout_seconds: float = 180  # un appel LLM bloque ne doit pas occuper une place indefiniment
 
     # --- Embeddings : "huggingface" (local, gratuit) ou "openai" ---
     embedding_provider: Literal["huggingface", "openai"] = "huggingface"
@@ -56,6 +57,14 @@ class Settings(BaseSettings):
 
     # --- API ---
     api_key: str = ""             # si defini, exige l'en-tete X-API-Key
+    preload_models: bool = False  # charge les modeles au demarrage ; /api/ready repond 503 d'ici la
+    max_upload_mb: int = 25
+
+    # --- Exploitation : file d'attente devant les traitements couteux, journal d'audit ---
+    max_active_requests: int = 1
+    request_queue_size: int = 20
+    request_wait_seconds: float = 180  # reste sous la limite de 240 s de l'entree Container Apps
+    audit_retention_days: int = 90
 
     @property
     def psycopg_url(self) -> str:

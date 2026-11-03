@@ -50,7 +50,6 @@ class SqlBackend(Protocol):
 
 class PostgresSqlBackend:
     def __init__(self, max_rows: int = 100, timeout_ms: int = 10_000):
-        from langchain_community.utilities import SQLDatabase
         from sqlalchemy import create_engine
 
         s = get_settings()
@@ -58,13 +57,19 @@ class PostgresSqlBackend:
         self.max_rows = max_rows
         self.timeout_ms = timeout_ms
         self.engine = create_engine(s.reader_database_url, pool_pre_ping=True)
-        self.db = SQLDatabase(self.engine, schema=self.schema, sample_rows_in_table_info=3)
+
+    def _db(self):
+        """SQLDatabase fige la liste des tables a sa creation : on la recree pour voir les fichiers
+        Excel deposes depuis le demarrage."""
+        from langchain_community.utilities import SQLDatabase
+
+        return SQLDatabase(self.engine, schema=self.schema, sample_rows_in_table_info=3)
 
     def list_tables(self) -> list[str]:
-        return sorted(self.db.get_usable_table_names())
+        return sorted(self._db().get_usable_table_names())
 
     def table_info(self) -> str:
-        return self.db.get_table_info()
+        return self._db().get_table_info()
 
     def run(self, sql: str) -> str:
         from sqlalchemy import text

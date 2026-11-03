@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 
 // Libelles des noeuds du graphe LangGraph (app/graph/builder.py).
 const STEP_LABELS = {
+  queue: "Prise en charge",
   contextualize: "Analyse de la question",
   route: "Choix de la source",
   retrieve: "Recherche dans les documents",
