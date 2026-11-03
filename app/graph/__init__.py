@@ -28,7 +28,7 @@ def _postgres_checkpointer():
 @lru_cache
 def get_graph():
     from app.llm import get_chat_model
-    from app.retriever import retrieve
+    from app.retriever import retrieve, summary_chunks
     from app.sql_backend import get_sql_backend
 
     s = get_settings()
@@ -43,6 +43,7 @@ def get_graph():
         llm=get_chat_model(),
         retrieve_fn=retrieve,
         sql_backend=sql_backend,
+        summary_fn=summary_chunks,
         relevance_threshold=s.relevance_threshold if s.rerank_enabled else 0.0,
         max_rewrites=s.max_rewrites,
         max_sql_retries=s.max_sql_retries,

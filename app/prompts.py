@@ -21,6 +21,14 @@ RAG_PROMPT = ChatPromptTemplate.from_messages([
     ("human", "PASSAGES :\n{context}\n\nQUESTION : {question}"),
 ]).partial(not_found=NOT_FOUND)
 
+SUMMARY_PROMPT = ChatPromptTemplate.from_messages([
+    ("system",
+     "Tu es un assistant documentaire. Resume les passages fournis en francais, en 3 a 6 phrases, "
+     "dans l'ordre du document. Utilise uniquement leur contenu, sans rien inventer, et copie "
+     "exactement les valeurs, chiffres et references. Termine par la source au format [fichier]."),
+    ("human", "PASSAGES :\n{context}\n\nDEMANDE : {question}"),
+])
+
 CONTEXTUALIZE_PROMPT = ChatPromptTemplate.from_messages([
     ("system",
      "Reformule la derniere question de l'utilisateur en une question autonome, "

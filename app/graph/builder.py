@@ -32,6 +32,7 @@ from app.prompts import (
     SQL_ANSWER_PROMPT,
     SQL_ERROR_BLOCK,
     SQL_PROMPT,
+    SUMMARY_PROMPT,
 )
 from app.sql_backend import SqlBackend, clean_sql
 
@@ -73,6 +74,13 @@ def has_analytic_intent(question: str) -> bool:
     return bool(ANALYTIC_INTENT.search(_ascii(question)))
 
 
+SUMMARY_INTENT = re.compile(r"\b(resum\w*|synthes\w*|synthetis\w*)\b")
+
+
+def is_summary_request(question: str) -> bool:
+    return bool(SUMMARY_INTENT.search(_ascii(question)))
+
+
 _SCHEMA_NOISE = {"selec", "creat", "table", "rows", "from", "integ", "bigin", "times", "text", "doubl", "preci"}
 
 
@@ -98,7 +106,7 @@ def parse_route(text: str, has_tables: bool, question: str = "", raw_question: s
         return "documents"
     if t.startswith("chat"):
         # "chat" = pas de recherche : reserve aux messages courts (salutations, remerciements).
-        if not raw_question or len(raw_question.split()) <= 5:
+        if (not raw_question or len(raw_question.split()) <= 5) and not is_summary_request(raw_question):
             return "chat"
     return "documents"  # defaut sur : la recherche documentaire ne peut pas casser
 
@@ -121,6 +129,7 @@ def build_graph(
     retrieve_fn: Callable[[str], list[Document]],
     sql_backend: SqlBackend | None = None,
     *,
+    summary_fn: Callable[[str], list[Document]] | None = None,
     relevance_threshold: float = 0.15,
     max_rewrites: int = 1,
     max_sql_retries: int = 1,
@@ -178,7 +187,12 @@ def build_graph(
 
     # ---------- branche RAG ----------
     def retrieve(state: GraphState) -> dict:
-        return {"documents": retrieve_fn(state["search_query"])}
+        query = state["search_query"]
+        if summary_fn and is_summary_request(query):
+            docs = summary_fn(query)
+            if docs:
+                return {"documents": docs}
+        return {"documents": retrieve_fn(query)}
 
     def grade(state: GraphState) -> str:
         docs = state.get("documents", [])
@@ -198,7 +212,9 @@ def build_graph(
         if not docs or best < relevance_threshold:
             # Pas d'appel LLM sur un contexte hors sujet : c'est la que naissent les hallucinations.
             return {"answer": NOT_FOUND, "sources": [], "messages": [AIMessage(NOT_FOUND)]}
-        answer = (RAG_PROMPT | llm | to_text).invoke(
+        # RAG_PROMPT autorise le refus "information absente" : il ferait echouer une demande de resume.
+        prompt = SUMMARY_PROMPT if is_summary_request(state["standalone"]) else RAG_PROMPT
+        answer = (prompt | llm | to_text).invoke(
             {"context": format_context(docs), "question": state["standalone"]}
         )
         return {"answer": answer, "sources": doc_sources(docs), "messages": [AIMessage(answer)]}
