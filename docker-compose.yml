@@ -21,6 +21,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql+psycopg://rag:rag@db:5432/rag
+      APP_DATABASE_URL: postgresql+psycopg://rag_app:rag_app@db:5432/rag
       READER_DATABASE_URL: postgresql+psycopg://rag_reader:rag_reader@db:5432/rag
       OLLAMA_BASE_URL: http://host.docker.internal:11434
     ports:

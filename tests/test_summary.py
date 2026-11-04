@@ -8,6 +8,7 @@ from app.graph.builder import build_graph, is_summary_request, make_input, parse
 from app.prompts import SUMMARY_NEEDS_DOCUMENT
 
 SOURCES = {"reglement_T2.pdf", "procedure_PV300.docx"}
+OWNER = "proprietaire-test"
 
 
 def test_detects_summary_requests():
@@ -35,16 +36,16 @@ def _chunk(i, source="reglement_T2.pdf"):
 
 def test_summary_chunks_keep_text_order_and_only_the_document(monkeypatch):
     chunks = [_chunk(2), _chunk(0, "procedure_PV300.docx"), _chunk(0), _chunk(1)]
-    monkeypatch.setattr("app.vectorstore.load_all_chunks", lambda: chunks)
-    docs = retriever.summary_chunks("résume le reglement T2")
+    monkeypatch.setattr("app.vectorstore.load_chunks", lambda owner: chunks)
+    docs = retriever.summary_chunks("résume le reglement T2", OWNER)
     assert [d.page_content for d in docs] == ["passage 0", "passage 1", "passage 2"]
     assert {d.metadata["source"] for d in docs} == {"reglement_T2.pdf"}
     assert all(d.metadata["relevance"] == 1.0 for d in docs)
 
 
 def test_long_document_is_sampled_from_start_to_end(monkeypatch):
-    monkeypatch.setattr("app.vectorstore.load_all_chunks", lambda: [_chunk(i) for i in range(50)] + [_chunk(0, "b.pdf")])
-    docs = retriever.summary_chunks("résume le reglement T2")
+    monkeypatch.setattr("app.vectorstore.load_chunks", lambda owner: [_chunk(i) for i in range(50)] + [_chunk(0, "b.pdf")])
+    docs = retriever.summary_chunks("résume le reglement T2", OWNER)
     assert len(docs) == retriever.SUMMARY_MAX_CHUNKS
     assert docs[0].page_content == "passage 0"
     assert docs[-1].page_content == "passage 49"
@@ -57,13 +58,13 @@ def test_short_summary_request_is_not_routed_to_chat():
 def test_summary_without_identified_document_asks_which_one_without_rewrite():
     searched = []
 
-    def search(q):
+    def search(q, owner):
         searched.append(q)
         return []
 
     llm = FakeListChatModel(responses=["documents"])
-    g = build_graph(llm, search, None, summary_fn=lambda q: [], max_rewrites=1, checkpointer=InMemorySaver())
-    out = g.invoke(make_input("résume le document"), {"configurable": {"thread_id": "q"}})
+    g = build_graph(llm, search, None, summary_fn=lambda q, owner: [], max_rewrites=1, checkpointer=InMemorySaver())
+    out = g.invoke(make_input("résume le document", OWNER), {"configurable": {"thread_id": "q"}})
     assert out["answer"] == SUMMARY_NEEDS_DOCUMENT
     assert searched == ["résume le document"]
     assert out["sources"] == []
@@ -80,12 +81,12 @@ def test_graph_uses_summary_chunks_and_summary_prompt():
     llm = SpyLLM(responses=["documents", "Le reglement fixe les regles. [reglement_T2.pdf]"])
     searched = []
 
-    def search(q):
+    def search(q, owner):
         searched.append(q)
         return []
 
-    g = build_graph(llm, search, None, summary_fn=lambda q: [_chunk(0)], checkpointer=InMemorySaver())
-    out = g.invoke(make_input("résumé le document reglement T2"), {"configurable": {"thread_id": "s"}})
+    g = build_graph(llm, search, None, summary_fn=lambda q, owner: [_chunk(0)], checkpointer=InMemorySaver())
+    out = g.invoke(make_input("résumé le document reglement T2", OWNER), {"configurable": {"thread_id": "s"}})
     assert out["answer"].startswith("Le reglement")
     assert searched == []
     assert "Resume les passages" in prompts[-1]

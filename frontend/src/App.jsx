@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { askStream } from "./api.js";
+import { askStream, getMe } from "./api.js";
 import Sidebar from "./components/Sidebar.jsx";
 import Chat from "./components/Chat.jsx";
 
-const STORAGE_KEY = "rag-v2-conversations";
+const LEGACY_STORAGE_KEY = "rag-v2-conversations"; // commune a tous les utilisateurs d'un navigateur
 
-function loadConversations() {
+function loadConversations(storageKey) {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+    return JSON.parse(localStorage.getItem(storageKey)) || [];
   } catch {
     return [];
   }
@@ -18,8 +18,30 @@ function newConversation() {
 }
 
 export default function App() {
+  const [me, setMe] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    try {
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
+    } catch {
+      /* stockage indisponible : rien a retirer */
+    }
+    getMe()
+      .then(setMe)
+      .catch((e) => setError(e.message));
+  }, []);
+
+  if (error) return <div className="error-text">{error}</div>;
+  if (!me) return null;
+  // Remontage complet au changement de compte : aucune conversation ne passe d'un utilisateur a l'autre.
+  return <Workspace key={me.user} me={me} />;
+}
+
+function Workspace({ me }) {
+  const storageKey = `rag-v2-conversations:${me.user}`;
   const [conversations, setConversations] = useState(() => {
-    const saved = loadConversations();
+    const saved = loadConversations(storageKey);
     return saved.length ? saved : [newConversation()];
   });
   const [activeId, setActiveId] = useState(() => conversations[0].id);
@@ -28,11 +50,11 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
+      localStorage.setItem(storageKey, JSON.stringify(conversations));
     } catch {
       /* stockage indisponible : l'appli fonctionne sans persistance */
     }
-  }, [conversations]);
+  }, [conversations, storageKey]);
 
   const active = conversations.find((c) => c.id === activeId) || conversations[0];
 
@@ -119,6 +141,7 @@ export default function App() {
   return (
     <div className="app">
       <Sidebar
+        me={me}
         conversations={conversations}
         activeId={active.id}
         onSelect={setActiveId}

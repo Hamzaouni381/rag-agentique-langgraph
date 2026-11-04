@@ -35,10 +35,11 @@ class Settings(BaseSettings):
 
     # --- PostgreSQL : vecteurs (pgvector) + tables metier + memoire LangGraph ---
     database_url: str = "postgresql+psycopg://rag:rag@localhost:5432/rag"
-    # Role en lecture seule, utilise UNIQUEMENT par l'outil SQL (defense en profondeur).
+    # Role soumis a la Row-Level Security, seul a lire les passages (app/tenancy.py).
+    app_database_url: str = "postgresql+psycopg://rag_app:rag_app@localhost:5432/rag"
+    # Role sans droit propre, utilise UNIQUEMENT par l'outil SQL : il prend le role de l'utilisateur.
     reader_database_url: str = "postgresql+psycopg://rag_reader:rag_reader@localhost:5432/rag"
     collection_name: str = "documents"
-    tabular_schema: str = "tabular"
 
     # --- Ingestion / retrieval ---
     documents_dir: str = "./data/documents"
@@ -60,6 +61,7 @@ class Settings(BaseSettings):
     auth_mode: Literal["none", "easyauth"] = "none"  # easyauth : connexion Entra geree par Container Apps
     preload_models: bool = False  # charge les modeles au demarrage ; /api/ready repond 503 d'ici la
     max_upload_mb: int = 25
+    max_user_storage_mb: int = 200  # les ressources sont partagees : un utilisateur ne doit pas tout occuper
 
     # --- Exploitation : file d'attente devant les traitements couteux, journal d'audit ---
     max_active_requests: int = 1

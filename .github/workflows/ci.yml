@@ -8,8 +8,29 @@ on:
 jobs:
   tests:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rag
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://rag:rag@localhost:5432/rag
+      TEST_APP_DATABASE_URL: postgresql+psycopg://rag_app:rag_app@localhost:5432/rag
+      TEST_READER_DATABASE_URL: postgresql+psycopg://rag_reader:rag_reader@localhost:5432/rag
     steps:
       - uses: actions/checkout@v4
+      - name: Preparer la base comme sur Azure (role rag sans privilege de superutilisateur)
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d rag -v ON_ERROR_STOP=1 -c "CREATE EXTENSION vector" -c "CREATE ROLE rag LOGIN CREATEROLE PASSWORD 'rag'" -c "ALTER DATABASE rag OWNER TO rag" -c "ALTER SCHEMA public OWNER TO rag"
+          PGPASSWORD=rag psql -h localhost -U rag -d rag -v reader_password=rag_reader -v app_password=rag_app -f infra/init_db.sql
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -20,7 +41,7 @@ jobs:
           pip install -r requirements.txt ruff
       - name: Lint
         run: ruff check app tests scripts eval --exclude app/parsers
-      - name: Tests unitaires (sans LLM ni base)
+      - name: Tests (sans LLM ; l'isolation entre utilisateurs est testee sur PostgreSQL)
         run: pytest -q
 
   docker:

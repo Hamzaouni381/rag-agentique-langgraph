@@ -3,8 +3,10 @@ import argparse
 import logging
 import uuid
 
+from app.auth import LOCAL_USER
 from app.graph import get_graph, make_input
 from app.observability import flush, run_config
+from app.tenancy import ensure_tenant
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
@@ -15,6 +17,7 @@ if __name__ == "__main__":
 
     thread_id = args.thread or str(uuid.uuid4())
     config = run_config(thread_id, run_name="cli")
+    ensure_tenant(LOCAL_USER.owner)
     graph = get_graph()
     print(f"Conversation {thread_id} (Ctrl+C pour quitter)")
     while True:
@@ -25,7 +28,7 @@ if __name__ == "__main__":
             break
         if not q:
             continue
-        for update in graph.stream(make_input(q), config, stream_mode="updates"):
+        for update in graph.stream(make_input(q, LOCAL_USER.owner), config, stream_mode="updates"):
             if args.trace:
                 print("  ->", ", ".join(update))
         out = graph.get_state(config).values

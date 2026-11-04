@@ -15,6 +15,7 @@ import time
 import uuid
 from pathlib import Path
 
+from app.auth import LOCAL_USER
 from app.graph import get_graph, make_input
 from app.observability import flush, run_config
 from app.prompts import NOT_FOUND
@@ -31,7 +32,8 @@ def load_questions(path: Path, limit: int) -> list[str]:
 
 def target(inputs: dict) -> dict:
     t0 = time.time()
-    out = get_graph().invoke(make_input(inputs["question"]), run_config(f"eval-{uuid.uuid4()}", run_name="eval"))
+    config = run_config(f"eval-{uuid.uuid4()}", run_name="eval")
+    out = get_graph().invoke(make_input(inputs["question"], LOCAL_USER.owner), config)
     return {
         "answer": out.get("answer", ""),
         "route": out.get("route", ""),

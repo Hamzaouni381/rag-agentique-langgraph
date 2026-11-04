@@ -50,10 +50,10 @@ def test_tokens_of_each_llm_call_are_traced():
         AIMessage("IP54 [m.docx, page 2]", usage_metadata={"input_tokens": 900, "output_tokens": 12, "total_tokens": 912}),
     ]))
     docs = [Document(page_content="IP54", metadata={"source": "m.docx", "page": 2, "relevance": 0.9})]
-    graph = build_graph(llm, lambda q: docs)
+    graph = build_graph(llm, lambda q, owner: docs)
 
     config = {**obs.run_config("thread-42"), "callbacks": [handler]}
-    graph.invoke(make_input("Quel est l'indice de protection ?"), config)
+    graph.invoke(make_input("Quel est l'indice de protection ?", "proprietaire-test"), config)
 
     from langfuse import get_client
 

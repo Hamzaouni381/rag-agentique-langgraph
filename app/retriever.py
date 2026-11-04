@@ -1,15 +1,17 @@
-"""Recherche hybride (pgvector + BM25 via EnsembleRetriever) puis rerank cross-encoder.
+"""Recherche hybride par utilisateur (pgvector + plein texte PostgreSQL via EnsembleRetriever) puis
+rerank cross-encoder.
 
 Le score du reranker est conserve dans metadata['relevance'] : le graphe s'en sert pour
 decider si le contexte est pertinent ou s'il faut reformuler la question (RAG correctif)."""
 import logging
 import re
-import threading
 import unicodedata
 from functools import lru_cache
 from pathlib import Path
 
+from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
+from langchain_core.retrievers import BaseRetriever
 
 from app.config import get_settings
 
@@ -17,46 +19,33 @@ logger = logging.getLogger(__name__)
 
 SUMMARY_MAX_CHUNKS = 6  # ~2 400 tokens : laisse la place a la reponse dans num_ctx=4096
 
-_bm25 = None
-_bm25_lock = threading.Lock()
+
+class KeywordRetriever(BaseRetriever):
+    """Branche lexicale de la recherche hybride, servie par PostgreSQL."""
+
+    owner: str
+    k: int
+
+    def _get_relevant_documents(
+        self, query: str, *, run_manager: CallbackManagerForRetrieverRun
+    ) -> list[Document]:
+        from app.vectorstore import keyword_search
+
+        return keyword_search(query, self.owner, self.k)
 
 
-def invalidate_bm25() -> None:
-    global _bm25
-    with _bm25_lock:
-        _bm25 = None
-
-
-def _get_bm25(k: int):
-    """Index BM25 construit en memoire a partir des chunks Postgres (reconstruit apres ingestion)."""
-    global _bm25
-    with _bm25_lock:
-        if _bm25 is None:
-            from langchain_community.retrievers import BM25Retriever
-
-            from app.vectorstore import load_all_chunks
-
-            chunks = load_all_chunks()
-            if not chunks:
-                return None
-            _bm25 = BM25Retriever.from_documents(chunks, k=k)
-        return _bm25
-
-
-def get_base_retriever():
+def get_base_retriever(owner: str):
     from app.vectorstore import get_vectorstore
 
     s = get_settings()
-    vector = get_vectorstore().as_retriever(search_kwargs={"k": s.retrieve_k})
+    # Le filtre double la Row-Level Security de la base : deux protections independantes.
+    vector = get_vectorstore(owner).as_retriever(search_kwargs={"k": s.retrieve_k, "filter": {"owner_id": owner}})
     if not s.hybrid_search:
-        return vector
-    bm25 = _get_bm25(s.retrieve_k)
-    if bm25 is None:
         return vector
     from langchain_classic.retrievers import EnsembleRetriever
 
     # Fusion par Reciprocal Rank Fusion ; le vecteur pese plus que le lexical.
-    return EnsembleRetriever(retrievers=[vector, bm25], weights=[0.6, 0.4])
+    return EnsembleRetriever(retrievers=[vector, KeywordRetriever(owner=owner, k=s.retrieve_k)], weights=[0.6, 0.4])
 
 
 @lru_cache
@@ -78,9 +67,9 @@ def rerank(question: str, docs: list[Document], top_n: int) -> list[Document]:
     return out
 
 
-def retrieve(question: str) -> list[Document]:
+def retrieve(question: str, owner: str) -> list[Document]:
     s = get_settings()
-    candidates = get_base_retriever().invoke(question)
+    candidates = get_base_retriever(owner).invoke(question)
     # Deduplication (un chunk peut sortir du vecteur ET de BM25).
     seen, unique = set(), []
     for d in candidates:
@@ -113,12 +102,12 @@ def named_source(question: str, sources: set[str]) -> str | None:
     return max(scores, key=scores.get)
 
 
-def summary_chunks(question: str) -> list[Document]:
+def summary_chunks(question: str, owner: str) -> list[Document]:
     """Passages du document vise, dans l'ordre du texte : un resume doit couvrir le document,
     pas les passages les plus proches de la question. Trop long : echantillon regulier."""
-    from app.vectorstore import load_all_chunks
+    from app.vectorstore import load_chunks
 
-    chunks = load_all_chunks()
+    chunks = load_chunks(owner)
     source = named_source(question, {d.metadata["source"] for d in chunks if d.metadata.get("source")})
     if source is None:
         return []

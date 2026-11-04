@@ -127,16 +127,19 @@ def _is_follow_up(question: str) -> bool:
 
 def build_graph(
     llm: BaseChatModel,
-    retrieve_fn: Callable[[str], list[Document]],
-    sql_backend: SqlBackend | None = None,
+    retrieve_fn: Callable[[str, str], list[Document]],
+    sql_backend: Callable[[str], SqlBackend | None] | None = None,
     *,
-    summary_fn: Callable[[str], list[Document]] | None = None,
+    summary_fn: Callable[[str, str], list[Document]] | None = None,
     relevance_threshold: float = 0.15,
     max_rewrites: int = 1,
     max_sql_retries: int = 1,
     checkpointer=None,
 ):
     to_text = StrOutputParser()
+
+    def _sql_for(state: GraphState) -> SqlBackend | None:
+        return sql_backend(state["owner_id"]) if sql_backend else None
 
     def _aux(prompt, inputs: dict, default: str) -> str:
         """Appel LLM auxiliaire (reformulation, routage) : en cas d'echec on degrade
@@ -177,23 +180,24 @@ def build_graph(
         }
 
     def route(state: GraphState) -> dict:
-        tables = sql_backend.list_tables() if sql_backend else []
+        backend = _sql_for(state)
+        tables = backend.list_tables() if backend else []
         raw = _aux(ROUTER_PROMPT, {"question": state["standalone"], "tables": ", ".join(tables) or "(aucune)"},
                    "documents")
         decision = parse_route(raw, bool(tables), question=state["standalone"], raw_question=state["question"])
-        if decision == "database" and not mentions_schema(state["standalone"], sql_backend.table_info()):
+        if decision == "database" and not mentions_schema(state["standalone"], backend.table_info()):
             decision = "documents"  # "combien de temps..." sans lien avec les tables
         logger.info("Route : %s (brut=%r)", decision, raw[:40])
         return {"route": decision}
 
     # ---------- branche RAG ----------
     def retrieve(state: GraphState) -> dict:
-        query = state["search_query"]
+        query, owner = state["search_query"], state["owner_id"]
         if summary_fn and is_summary_request(query):
-            docs = summary_fn(query)
+            docs = summary_fn(query, owner)
             if docs:
                 return {"documents": docs}
-        return {"documents": retrieve_fn(query)}
+        return {"documents": retrieve_fn(query, owner)}
 
     def grade(state: GraphState) -> str:
         docs = state.get("documents", [])
@@ -225,12 +229,13 @@ def build_graph(
 
     # ---------- branche SQL ----------
     def write_sql(state: GraphState) -> dict:
+        backend = _sql_for(state)
         error_block = ""
         if state.get("sql_error"):
             error_block = SQL_ERROR_BLOCK.format(sql=state.get("sql", ""), error=state["sql_error"])
         raw = (SQL_PROMPT | llm | to_text).invoke({
-            "schema": getattr(sql_backend, "schema", "tabular"),
-            "table_info": sql_backend.table_info(),
+            "schema": backend.schema,
+            "table_info": backend.table_info(),
             "question": state["standalone"],
             "error_block": error_block,
         })
@@ -238,7 +243,7 @@ def build_graph(
 
     def execute_sql(state: GraphState) -> dict:
         try:
-            return {"sql_result": sql_backend.run(state["sql"]), "sql_error": ""}
+            return {"sql_result": _sql_for(state).run(state["sql"]), "sql_error": ""}
         except Exception as e:
             logger.warning("SQL en echec : %s", e)
             return {"sql_error": str(e)[:500], "sql_result": ""}
@@ -288,5 +293,5 @@ def build_graph(
     return g.compile(checkpointer=checkpointer)
 
 
-def make_input(question: str) -> dict:
-    return {"question": question, "messages": [HumanMessage(question)]}
+def make_input(question: str, owner_id: str) -> dict:
+    return {"question": question, "owner_id": owner_id, "messages": [HumanMessage(question)]}

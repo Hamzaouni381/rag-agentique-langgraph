@@ -1,16 +1,19 @@
 """Outil SQL : schema decrit par LangChain SQLDatabase, execution en lecture seule.
 
-Trois barrieres : (1) filtre statique SELECT/WITH unique, (2) transaction READ ONLY +
-statement_timeout, (3) role PostgreSQL `rag_reader` qui n'a que SELECT sur le schema tabular."""
+Trois barrieres : (1) filtre statique SELECT/WITH unique, sans acces au catalogue, (2) transaction READ ONLY +
+statement_timeout, (3) role PostgreSQL de l'utilisateur, qui n'a que SELECT sur son propre schema."""
 import re
 from functools import lru_cache
 from typing import Protocol
 
 from app.config import get_settings
+from app.tenancy import tenant_role, tenant_schema
 
+# Le catalogue (pg_*, information_schema) est lisible par tout role : il revelerait les noms des autres
+# utilisateurs et de leurs tables. set_config pourrait tenter de changer de role.
 _FORBIDDEN = re.compile(
     r"\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|merge|call|vacuum|"
-    r"pg_sleep|pg_read_file|lo_import|dblink)\b",
+    r"pg_\w+|information_schema|set_config|lo_import|dblink)\b",
     re.IGNORECASE,
 )
 
@@ -49,14 +52,11 @@ class SqlBackend(Protocol):
 
 
 class PostgresSqlBackend:
-    def __init__(self, max_rows: int = 100, timeout_ms: int = 10_000):
-        from sqlalchemy import create_engine
-
-        s = get_settings()
-        self.schema = s.tabular_schema
+    def __init__(self, engine, schema: str, max_rows: int = 100, timeout_ms: int = 10_000):
+        self.engine = engine
+        self.schema = schema
         self.max_rows = max_rows
         self.timeout_ms = timeout_ms
-        self.engine = create_engine(s.reader_database_url, pool_pre_ping=True)
 
     def _db(self):
         """SQLDatabase fige la liste des tables a sa creation : on la recree pour voir les fichiers
@@ -88,6 +88,16 @@ class PostgresSqlBackend:
         return "\n".join(lines)
 
 
-@lru_cache
-def get_sql_backend() -> SqlBackend:
-    return PostgresSqlBackend()
+@lru_cache(maxsize=256)
+def get_sql_backend(owner: str) -> SqlBackend:
+    """Chaque connexion prend le role de l'utilisateur des son ouverture : le SQL du LLM ne peut lire que
+    son schema, meme s'il cite celui d'un autre. Sans pool : le serveur limite les connexions."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.pool import NullPool
+
+    engine = create_engine(
+        get_settings().reader_database_url,
+        poolclass=NullPool,
+        connect_args={"options": f"-c role={tenant_role(owner)}"},
+    )
+    return PostgresSqlBackend(engine, tenant_schema(owner))

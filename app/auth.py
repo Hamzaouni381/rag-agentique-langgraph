@@ -11,24 +11,34 @@ from dataclasses import dataclass
 from fastapi import Depends, Header, HTTPException
 
 from app.config import get_settings
+from app.tenancy import owner_key
 
 LOGIN_URL = "/.auth/login/aad?post_login_redirect_uri=/"
 LOGOUT_URL = "/.auth/logout?post_logout_redirect_uri=/"
 _NAME_CLAIMS = ("preferred_username", "email", "name")
+# Identifiant immuable de la personne. Une adresse e-mail peut changer ou etre reattribuee a quelqu'un
+# d'autre : elle ne doit jamais decider a qui appartiennent des donnees.
+_SUBJECT_CLAIMS = (
+    "http://schemas.microsoft.com/identity/claims/objectidentifier",
+    "oid",
+    "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier",
+    "sub",
+)
 
 
 @dataclass(frozen=True)
 class User:
-    id: str
+    id: str  # lisible, pour l'audit et l'interface
     roles: frozenset[str]
+    owner: str  # proprietaire des donnees (app/tenancy.py)
 
     @property
     def is_admin(self) -> bool:
         return "admin" in self.roles
 
 
-SERVICE_USER = User("service:cle-api", frozenset({"admin"}))
-LOCAL_USER = User("local", frozenset({"admin"}))  # developpement : ni Easy Auth ni cle API
+SERVICE_USER = User("service:cle-api", frozenset({"admin"}), owner_key("service"))
+LOCAL_USER = User("local", frozenset({"admin"}), owner_key("local"))  # developpement : ni Easy Auth ni cle API
 
 
 def parse_principal(header: str) -> User | None:
@@ -42,7 +52,10 @@ def parse_principal(header: str) -> User | None:
     except (ValueError, KeyError, TypeError):
         return None
     name = next((names[claim] for claim in _NAME_CLAIMS if names.get(claim)), None)
-    return User(name.lower(), roles) if name else None
+    subject = next((names[claim] for claim in _SUBJECT_CLAIMS if names.get(claim)), None)
+    if not (name and subject):
+        return None
+    return User(name.lower(), roles, owner_key(subject))
 
 
 def current_user(
@@ -77,4 +90,4 @@ def require_admin(user: User = Depends(current_user)) -> User:
 def thread_key(user: User, thread_id: str) -> str:
     """Cle de memoire propre a l'utilisateur : connaitre l'identifiant d'une conversation ne suffit
     pas a relire celle d'un autre."""
-    return f"{user.id}:{thread_id}"
+    return f"{user.owner}:{thread_id}"

@@ -1,7 +1,7 @@
 # --- Orchestration LLM ---
 langchain>=1.0,<2
 langchain-classic>=1.0,<2      # retrievers avances (ContextualCompression, Ensemble), RecordManager
-langchain-community>=0.4,<1    # SQLDatabase, BM25, CrossEncoder HF
+langchain-community>=0.4,<1    # SQLDatabase, CrossEncoder HF
 langgraph>=1.0,<2
 langgraph-checkpoint-postgres>=3.0  # memoire conversationnelle persistee dans Postgres
 
@@ -23,7 +23,6 @@ pdfplumber
 python-docx
 pandas
 openpyxl
-rank-bm25
 
 # --- API ---
 fastapi

@@ -10,6 +10,7 @@ Route = Literal["documents", "database", "chat"]
 class GraphState(TypedDict, total=False):
     # Historique de la conversation, persiste par le checkpointer (cle : thread_id).
     messages: Annotated[list[AnyMessage], add_messages]
+    owner_id: str             # proprietaire des donnees interrogees, fixe par l'API a chaque question
     question: str             # question brute de l'utilisateur
     standalone: str           # question autonome (historique resolu)
     search_query: str         # requete effectivement envoyee au retriever (peut etre reformulee)

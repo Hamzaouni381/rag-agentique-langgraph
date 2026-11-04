@@ -7,6 +7,8 @@ from langgraph.checkpoint.memory import InMemorySaver
 from app.graph.builder import build_graph, make_input
 from app.prompts import NOT_FOUND
 
+OWNER = "proprietaire-test"
+
 
 class FakeSql:
     schema = "tabular"
@@ -33,12 +35,12 @@ def doc(text, score, source="manuel.pdf", page=3):
 
 
 def run(graph, question, thread="t1"):
-    return graph.invoke(make_input(question), {"configurable": {"thread_id": thread}})
+    return graph.invoke(make_input(question, OWNER), {"configurable": {"thread_id": thread}})
 
 
 def test_rag_route_with_relevant_context():
     llm = FakeListChatModel(responses=["documents", "IP66 [manuel.pdf, page 3]"])
-    g = build_graph(llm, lambda q: [doc("Indice de protection IP66", 0.9)], FakeSql(), checkpointer=InMemorySaver())
+    g = build_graph(llm, lambda q, owner: [doc("Indice de protection IP66", 0.9)], lambda owner: FakeSql(), checkpointer=InMemorySaver())
     out = run(g, "Quel est l'indice de protection ?")
     assert out["route"] == "documents"
     assert out["answer"].startswith("IP66")
@@ -49,7 +51,7 @@ def test_rag_route_with_relevant_context():
 def test_irrelevant_context_triggers_rewrite_then_refuses_without_llm():
     queries = []
 
-    def retriever(q):
+    def retriever(q, owner):
         queries.append(q)
         return [doc("hors sujet", 0.01)]
 
@@ -70,7 +72,7 @@ def test_sql_route_self_corrects_after_error():
         '```sql\nSELECT "ligne", SUM("retard_min") AS total FROM tabular.incidents GROUP BY "ligne"\n```',
         "La ligne A cumule 42 minutes de retard.",
     ])
-    g = build_graph(llm, lambda q: [], sql, max_sql_retries=1, checkpointer=InMemorySaver())
+    g = build_graph(llm, lambda q, owner: [], lambda owner: sql, max_sql_retries=1, checkpointer=InMemorySaver())
     out = run(g, "Retard total par ligne ?")
     assert out["route"] == "database"
     assert len(sql.calls) == 2
@@ -80,14 +82,14 @@ def test_sql_route_self_corrects_after_error():
 
 def test_database_route_falls_back_to_documents_without_tables():
     llm = FakeListChatModel(responses=["database", "reponse"])
-    g = build_graph(llm, lambda q: [doc("x", 0.9)], None, checkpointer=InMemorySaver())
+    g = build_graph(llm, lambda q, owner: [doc("x", 0.9)], None, checkpointer=InMemorySaver())
     assert run(g, "combien d'incidents ?")["route"] == "documents"
 
 
 def test_memory_contextualizes_follow_up_question():
     seen = []
 
-    def retriever(q):
+    def retriever(q, owner):
         seen.append(q)
         return [doc("contenu", 0.9)]
 
@@ -112,7 +114,7 @@ def test_auxiliary_llm_failure_degrades_instead_of_crashing():
 
     seen = []
     llm = FlakyLLM(responses=["documents", "R1", "documents", "R2"])
-    g = build_graph(llm, lambda q: seen.append(q) or [doc("x", 0.9)], None, checkpointer=InMemorySaver())
+    g = build_graph(llm, lambda q, owner: seen.append(q) or [doc("x", 0.9)], None, checkpointer=InMemorySaver())
     run(g, "Parle-moi du PV-300", thread="c")
     out = run(g, "Et son indice IP ?", thread="c")
     assert out["answer"] == "R2"

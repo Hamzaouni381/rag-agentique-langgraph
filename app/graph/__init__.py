@@ -25,24 +25,28 @@ def _postgres_checkpointer():
     return saver
 
 
+def _sql_backend_for(owner: str):
+    from app.sql_backend import get_sql_backend
+
+    try:
+        backend = get_sql_backend(owner)
+        backend.list_tables()
+        return backend
+    except Exception as e:  # pas de role lecteur / schema : la branche SQL est desactivee
+        logger.warning("Backend SQL indisponible (%s) : routage documents/chat uniquement", e)
+        return None
+
+
 @lru_cache
 def get_graph():
     from app.llm import get_chat_model
     from app.retriever import retrieve, summary_chunks
-    from app.sql_backend import get_sql_backend
 
     s = get_settings()
-    try:
-        sql_backend = get_sql_backend()
-        sql_backend.list_tables()
-    except Exception as e:  # pas de role lecteur / schema : la branche SQL est desactivee
-        logger.warning("Backend SQL indisponible (%s) : routage documents/chat uniquement", e)
-        sql_backend = None
-
     return build_graph(
         llm=get_chat_model(),
         retrieve_fn=retrieve,
-        sql_backend=sql_backend,
+        sql_backend=_sql_backend_for,
         summary_fn=summary_chunks,
         relevance_threshold=s.relevance_threshold if s.rerank_enabled else 0.0,
         max_rewrites=s.max_rewrites,

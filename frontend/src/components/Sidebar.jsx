@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { deleteDocument, getHealth, getMe, listDocuments, uploadDocuments } from "../api.js";
+import { deleteDocument, getHealth, listDocuments, uploadDocuments } from "../api.js";
 
 const ACCEPT = ".pdf,.docx,.doc,.txt,.md,.xlsx,.xls,.csv";
 
@@ -9,10 +9,9 @@ function formatSize(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} Mo`;
 }
 
-export default function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, disabled }) {
+export default function Sidebar({ me, conversations, activeId, onSelect, onNew, onDelete, disabled }) {
   const [docs, setDocs] = useState([]);
   const [health, setHealth] = useState(null);
-  const [me, setMe] = useState(null);
   const [indexing, setIndexing] = useState("");
   const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
@@ -22,9 +21,6 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
 
   useEffect(() => {
     refreshDocs();
-    getMe()
-      .then(setMe)
-      .catch((e) => setError(e.message));
     getHealth()
       .then(setHealth)
       .catch(() => setHealth({ database: "injoignable" }));
@@ -97,8 +93,7 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
         ))}
       </ul>
 
-      <div className="section-title">Documents indexés</div>
-      {me?.is_admin && (
+      <div className="section-title">Mes documents</div>
       <div
         className={`dropzone ${dragOver ? "over" : ""}`}
         onDragOver={(e) => {
@@ -135,7 +130,6 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
           }}
         />
       </div>
-      )}
       {error && <div className="error-text">{error}</div>}
 
       <ul className="doc-list">
@@ -147,16 +141,14 @@ export default function Sidebar({ conversations, activeId, onSelect, onNew, onDe
               {d.name}
             </span>
             <span className="doc-size">{formatSize(d.size)}</span>
-            {me?.is_admin && (
-              <button className="icon-btn" title="Supprimer" onClick={() => remove(d.name)} disabled={!!indexing}>
-                ×
-              </button>
-            )}
+            <button className="icon-btn" title="Supprimer" onClick={() => remove(d.name)} disabled={!!indexing}>
+              ×
+            </button>
           </li>
         ))}
       </ul>
 
-      {me?.logout_url && (
+      {me.logout_url && (
         <div className="muted" title={me.user}>
           {me.user} · <a href={me.logout_url}>Se déconnecter</a>
         </div>

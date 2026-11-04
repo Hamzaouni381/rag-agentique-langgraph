@@ -24,6 +24,7 @@ from app.auth import LOGOUT_URL, SERVICE_USER, User, require_admin, require_user
 from app.config import get_settings
 from app.loaders import DOCUMENT_EXTENSIONS, TABULAR_EXTENSIONS
 from app.observability import run_config
+from app.tenancy import ensure_schema, ensure_tenant, tenant_dir
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
 
@@ -37,10 +38,9 @@ def _preload() -> None:
     from app.graph import get_graph
     from app.llm import get_chat_model
     from app.retriever import get_cross_encoder
-    from app.vectorstore import get_vectorstore
 
     try:
-        get_vectorstore()
+        ensure_schema()
         get_cross_encoder()
         get_graph()
         for attempt in range(10):  # le conteneur Ollama peut demarrer apres celui de l'API
@@ -132,15 +132,23 @@ def health():
     return {"database": db, "llm": s.llm_provider, "model": model, "embeddings": s.embedding_provider}
 
 
-def _documents_dir() -> Path:
-    path = Path(get_settings().documents_dir)
+def require_tenant(user: User = Depends(require_user)) -> User:
+    """Toute route qui touche a des donnees passe ici : le proprietaire vient de l'identite verifiee,
+    jamais de la requete."""
+    ensure_tenant(user.owner)
+    return user
+
+
+def _documents_dir(user: User) -> Path:
+    path = tenant_dir(user.owner)
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
-@api.get("/documents", dependencies=[Depends(require_user)])
-def list_documents():
-    files = [p for p in sorted(_documents_dir().iterdir()) if p.is_file() and p.suffix.lower() in ALLOWED_EXTENSIONS]
+@api.get("/documents")
+def list_documents(user: User = Depends(require_tenant)):
+    directory = _documents_dir(user)
+    files = [p for p in sorted(directory.iterdir()) if p.is_file() and p.suffix.lower() in ALLOWED_EXTENSIONS]
     return [
         {
             "name": p.name,
@@ -152,33 +160,34 @@ def list_documents():
 
 
 @api.delete("/documents/{name}")
-def delete_document(name: str, user: User = Depends(require_admin)):
+def delete_document(name: str, user: User = Depends(require_tenant)):
     from app.ingestion import ingest_directory
 
-    path = _documents_dir() / Path(name).name  # Path(...).name : pas de traversee de dossier
+    path = _documents_dir(user) / Path(name).name  # Path(...).name : pas de traversee de dossier
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Document introuvable")
     path.unlink()
     with get_admission().slot():
-        # cleanup='full' retire de l'index les chunks du fichier supprime.
-        result = ingest_directory(cleanup="full")
+        # cleanup='full' retire de l'index les chunks et les tables du fichier supprime.
+        result = ingest_directory(user.owner, cleanup="full")
     audit.record("document_delete", "ok", user_id=user.id, details={"file": path.name})
     return result
 
 
-@api.post("/ingest", dependencies=[Depends(require_admin)])
-def ingest(full_cleanup: bool = False):
+@api.post("/ingest")
+def ingest(full_cleanup: bool = False, user: User = Depends(require_tenant)):
     from app.ingestion import ingest_directory
 
     with get_admission().slot():
-        return ingest_directory(cleanup="full" if full_cleanup else "incremental")
+        return ingest_directory(user.owner, cleanup="full" if full_cleanup else "incremental")
 
 
 @api.post("/upload")
-def upload(files: list[UploadFile] = File(...), user: User = Depends(require_admin)):
+def upload(files: list[UploadFile] = File(...), user: User = Depends(require_tenant)):
     from app.ingestion import ingest_directory
 
     s = get_settings()
+    incoming = {Path(f.filename or "").name: f.size or 0 for f in files}
     for f in files:
         name = Path(f.filename or "").name
         if Path(name).suffix.lower() not in ALLOWED_EXTENSIONS:
@@ -186,7 +195,12 @@ def upload(files: list[UploadFile] = File(...), user: User = Depends(require_adm
         if (f.size or 0) > s.max_upload_mb * 1024 * 1024:
             raise HTTPException(status_code=413, detail=f"Fichier trop volumineux (max {s.max_upload_mb} Mo) : {name}")
 
-    target = _documents_dir()
+    target = _documents_dir(user)
+    # Un fichier du meme nom est remplace : il ne compte qu'une fois.
+    kept = sum(p.stat().st_size for p in target.iterdir() if p.is_file() and p.name not in incoming)
+    if kept + sum(incoming.values()) > s.max_user_storage_mb * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"Espace de stockage dépassé (max {s.max_user_storage_mb} Mo).")
+
     saved = []
     for f in files:
         name = Path(f.filename or "").name
@@ -194,7 +208,7 @@ def upload(files: list[UploadFile] = File(...), user: User = Depends(require_adm
             shutil.copyfileobj(f.file, out)
         saved.append(name)
     with get_admission().slot():
-        result = ingest_directory(cleanup="incremental")
+        result = ingest_directory(user.owner, cleanup="incremental")
     audit.record("document_upload", "ok", user_id=user.id, details={"files": saved})
     return {"saved": saved, **result}
 
@@ -222,7 +236,7 @@ def _audit_question(
 
 
 @api.post("/ask", response_model=AskResponse)
-def ask(req: AskRequest, user: User = Depends(require_user)):
+def ask(req: AskRequest, user: User = Depends(require_tenant)):
     from app.graph import get_graph, make_input
 
     thread_id = req.thread_id or str(uuid.uuid4())
@@ -231,7 +245,7 @@ def ask(req: AskRequest, user: User = Depends(require_user)):
     status, out = "error", {}
     try:
         with get_admission().slot():
-            out = get_graph().invoke(make_input(req.question), run_config(thread_key(user, thread_id)))
+            out = get_graph().invoke(make_input(req.question, user.owner), run_config(thread_key(user, thread_id)))
         status = "ok"
     except QueueFull:
         status = "refused"
@@ -249,7 +263,7 @@ def ask(req: AskRequest, user: User = Depends(require_user)):
 
 
 @api.post("/ask/stream")
-def ask_stream(req: AskRequest, user: User = Depends(require_user)):
+def ask_stream(req: AskRequest, user: User = Depends(require_tenant)):
     """SSE : `step` (file d'attente ou noeud termine), `token` (generation), `done` (reponse finale) ou `error`."""
     from app.graph import get_graph, make_input
 
@@ -267,7 +281,8 @@ def ask_stream(req: AskRequest, user: User = Depends(require_user)):
         try:
             yield sse("step", {"node": "queue"})
             with get_admission().slot():
-                for mode, chunk in graph.stream(make_input(req.question), config, stream_mode=["updates", "messages"]):
+                graph_input = make_input(req.question, user.owner)
+                for mode, chunk in graph.stream(graph_input, config, stream_mode=["updates", "messages"]):
                     if mode == "updates":
                         for node, update in chunk.items():
                             payload = {"node": node}

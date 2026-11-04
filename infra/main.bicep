@@ -24,6 +24,10 @@ param postgresPassword string
 param readerPassword string
 
 @secure()
+@description('Mot de passe du role rag_app, soumis a la Row-Level Security.')
+param appDbPassword string
+
+@secure()
 @description('Cle du compte de service (scripts et tests), en-tete X-API-Key.')
 param apiKey string
 
@@ -198,6 +202,10 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           value: 'postgresql+psycopg://rag:${postgresPassword}@${postgres.properties.fullyQualifiedDomainName}:5432/${database.name}?sslmode=require'
         }
         {
+          name: 'app-database-url'
+          value: 'postgresql+psycopg://rag_app:${appDbPassword}@${postgres.properties.fullyQualifiedDomainName}:5432/${database.name}?sslmode=require'
+        }
+        {
           name: 'reader-database-url'
           value: 'postgresql+psycopg://rag_reader:${readerPassword}@${postgres.properties.fullyQualifiedDomainName}:5432/${database.name}?sslmode=require'
         }
@@ -222,6 +230,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'OLLAMA_BASE_URL', value: 'http://localhost:11434' } // meme replica : localhost partage
             { name: 'LLM_NUM_THREAD', value: '2' } // = quota CPU du conteneur ollama (sinon throttling)
             { name: 'DATABASE_URL', secretRef: 'database-url' }
+            { name: 'APP_DATABASE_URL', secretRef: 'app-database-url' }
             { name: 'READER_DATABASE_URL', secretRef: 'reader-database-url' }
             { name: 'API_KEY', secretRef: 'api-key' }
             { name: 'AUTH_MODE', value: authEnabled ? 'easyauth' : 'none' }
@@ -270,7 +279,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
       ]
       scale: {
         minReplicas: 0 // aucun cout de calcul au repos
-        maxReplicas: 1 // l'index BM25 est en memoire : une seule replique pour rester coherent
+        maxReplicas: 1 // choix de cout : le code supporte plusieurs repliques, a 0,60 $/h chacune
       }
       volumes: [
         {
