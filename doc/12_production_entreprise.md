@@ -11,7 +11,7 @@ Ce chapitre dit ce que le système a déjà d'un vrai système de production, ce
 | **Livraison** | Partiel | Infrastructure en Bicep, images construites par la CI, tests à chaque push, mise à jour sans coupure | Déploiement automatique, préproduction, retour arrière documenté |
 | **Exploitation** | Fait | File d'attente, refus explicite si saturation, délais maximum, sondes, arrêt progressif | Alertes |
 | **Traçabilité** | Partiel | Journal d'audit nominatif en base et en JSON, identifiant par requête | Traces Langfuse actives sur Azure |
-| **Identité et droits** | Partiel | Connexion Microsoft Entra, rôles `admin` et `user`, conversations cloisonnées, compte de service | Validation de la connexion dans un navigateur, documents cloisonnés |
+| **Identité et droits** | Partiel | Connexion Microsoft Entra, rôles `admin` et `user`, conversations cloisonnées, compte de service | Vérification de l'audit nominatif et de la déconnexion, documents cloisonnés |
 | **Sécurité** | Partiel | HTTPS, SQL en lecture seule à trois barrières, secrets hors du dépôt, taille des fichiers limitée | Key Vault, base sur réseau privé, défense contre l'injection de prompt |
 | **Qualité IA** | Partiel | Script d'évaluation, refus sans appel au LLM si rien n'est pertinent | Modèle choisi par mesure, contrôle des réponses, évaluation en CI, retours utilisateurs |
 | **Données** | Partiel | Sauvegardes de 7 jours, conservation de l'audit limitée à 90 jours | Test de restauration, purge des conversations |
