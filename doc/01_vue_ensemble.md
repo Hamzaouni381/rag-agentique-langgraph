@@ -18,7 +18,7 @@ Le système doit :
 
 ## 1.2 Le pitch en 30 secondes
 
-> « C'est un assistant RAG agentique. Un graphe LangGraph analyse chaque question et choisit entre trois stratégies. La première est une recherche documentaire hybride : vecteurs pgvector plus BM25, puis un reranker cross-encoder, avec une boucle corrective qui reformule la question si le contexte trouvé n'est pas pertinent. La deuxième est un Text-to-SQL qui corrige lui-même ses erreurs, sur les tableaux Excel importés dans PostgreSQL. La troisième est une simple réponse conversationnelle. Tout est stocké dans un seul PostgreSQL : les vecteurs, les tables et la mémoire des conversations. Le tout est exposé par une API FastAPI en streaming, avec une interface React, tracé dans LangSmith, testé et intégré en CI. »
+> « C'est un assistant RAG agentique. Un graphe LangGraph analyse chaque question et choisit entre trois stratégies. La première est une recherche documentaire hybride : vecteurs pgvector plus recherche plein texte PostgreSQL, puis un reranker cross-encoder, avec une boucle corrective qui reformule la question si le contexte trouvé n'est pas pertinent. La deuxième est un Text-to-SQL qui corrige lui-même ses erreurs, sur les tableaux Excel importés dans PostgreSQL. La troisième est une simple réponse conversationnelle. Tout est stocké dans un seul PostgreSQL : les vecteurs, les tables et la mémoire des conversations. Le tout est exposé par une API FastAPI en streaming, avec une interface React, tracé dans LangSmith, testé et intégré en CI. »
 
 ## 1.3 Architecture générale
 

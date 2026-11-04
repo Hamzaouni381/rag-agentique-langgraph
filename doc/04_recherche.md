@@ -47,11 +47,11 @@ Un seul mot commun suffit pour qu'un chunk soit candidat ; `ts_rank` classe ensu
 
 ## 4.4 Étage 2 — La fusion RRF
 
-**Le problème** : les deux recherches produisent des scores **incomparables**. L'une donne une distance cosinus entre 0 et 2, l'autre un score BM25 non borné.
+**Le problème** : les deux recherches produisent des scores **incomparables**. L'une donne une distance cosinus entre 0 et 2, l'autre un score de mots-clés non borné.
 
 **La solution, *Reciprocal Rank Fusion*** : on oublie les scores et on ne garde que les **rangs**.
 ```
-score_final(chunk) = 0,6 × 1/(60 + rang_vectoriel) + 0,4 × 1/(60 + rang_BM25)
+score_final(chunk) = 0,6 × 1/(60 + rang_vectoriel) + 0,4 × 1/(60 + rang_plein_texte)
 ```
 Un chunk bien classé **dans les deux listes** remonte en tête. Un chunk présent dans une seule liste garde une chance. La constante 60 (valeur standard) adoucit l'écart entre le 1er et le 10e rang.
 
