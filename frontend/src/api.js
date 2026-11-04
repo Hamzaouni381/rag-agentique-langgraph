@@ -1,6 +1,7 @@
 // Client de l'API FastAPI. En dev, Vite redirige /api vers http://localhost:8001.
 
 const API_KEY_STORAGE = "rag-v2-api-key";
+const LOGIN_ATTEMPT_STORAGE = "rag-v2-login-attempt";
 
 function loadApiKey() {
   try {
@@ -11,6 +12,7 @@ function loadApiKey() {
 }
 
 let apiKey = loadApiKey();
+let useApiKey = false;
 
 function saveApiKey(key) {
   apiKey = key;
@@ -21,26 +23,56 @@ function saveApiKey(key) {
   }
 }
 
-// Envoie X-API-Key si on en a une. La cle n'est jamais dans le JS publie : sur un 401, on la
-// demande une fois a l'utilisateur et elle reste dans son navigateur.
+function forgetApiKey() {
+  apiKey = "";
+  try {
+    localStorage.removeItem(API_KEY_STORAGE);
+  } catch {
+    /* stockage indisponible : rien a oublier */
+  }
+}
+
+// Une connexion qui echoue relancerait la redirection sans fin : une seule tentative par 30 s.
+function redirectToLogin(url) {
+  try {
+    const last = Number(sessionStorage.getItem(LOGIN_ATTEMPT_STORAGE) || 0);
+    if (Date.now() - last < 30000) return false;
+    sessionStorage.setItem(LOGIN_ATTEMPT_STORAGE, String(Date.now()));
+  } catch {
+    /* stockage indisponible : on tente quand meme */
+  }
+  window.location.assign(url);
+  return true;
+}
+
+// Le navigateur n'envoie pas de cle d'emblee : si le serveur exige une connexion par compte, une
+// cle gardee ne doit pas permettre de la contourner. Sans connexion par compte (developpement), on
+// passe a la cle sur le premier 401 : celle deja gardee, sinon demandee une fois a l'utilisateur.
 async function authFetch(url, options = {}) {
   const call = () =>
-    fetch(url, { ...options, headers: { ...options.headers, ...(apiKey ? { "X-API-Key": apiKey } : {}) } });
-  const res = await call();
+    fetch(url, { ...options, headers: { ...options.headers, ...(useApiKey ? { "X-API-Key": apiKey } : {}) } });
+  let res = await call();
   if (res.status !== 401) return res;
-  // Connexion par compte active : le serveur indique ou se connecter.
   const loginUrl = await res
     .clone()
     .json()
     .then((body) => body.detail?.login_url)
     .catch(() => null);
   if (loginUrl) {
-    window.location.assign(loginUrl);
-    return new Promise(() => {}); // la page change : rien d'autre a afficher
+    forgetApiKey();
+    useApiKey = false;
+    if (redirectToLogin(loginUrl)) return new Promise(() => {}); // la page change : rien d'autre a afficher
+    return res;
+  }
+  if (!useApiKey && apiKey) {
+    useApiKey = true;
+    res = await call();
+    if (res.status !== 401) return res;
   }
   const entered = window.prompt("Clé d'accès à l'API :")?.trim();
   if (!entered) return res;
   saveApiKey(entered);
+  useApiKey = true;
   return call();
 }
 
@@ -49,7 +81,8 @@ async function request(path, options = {}) {
   if (!res.ok) {
     let detail = `Erreur ${res.status}`;
     try {
-      detail = (await res.json()).detail || detail;
+      const body = (await res.json()).detail;
+      detail = body?.message || body || detail;
     } catch {
       /* corps non JSON */
     }

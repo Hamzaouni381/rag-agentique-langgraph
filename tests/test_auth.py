@@ -76,6 +76,11 @@ def test_api_key_is_a_named_service_account(client):
     assert client.audit_calls[-1][1]["user_id"] == "service:cle-api"
 
 
+def test_only_a_signed_in_user_gets_a_logout_link(client):
+    assert client.get("/api/me", headers=as_user("user")).json()["logout_url"].startswith("/.auth/logout")
+    assert client.get("/api/me", headers={"X-API-Key": "cle"}).json()["logout_url"] is None
+
+
 def test_forged_principal_is_ignored_without_easy_auth(client, monkeypatch):
     settings = api_module.get_settings().model_copy(update={"auth_mode": "none", "api_key": "cle"})
     monkeypatch.setattr(auth_module, "get_settings", lambda: settings)

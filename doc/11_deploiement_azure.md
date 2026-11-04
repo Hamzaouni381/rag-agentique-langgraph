@@ -18,7 +18,7 @@ Section tenue à jour à chaque intervention. N'y figure que ce qui a été vér
 | 03/11/2026 | Défaut constaté | Le modèle déforme parfois un résumé : sur un essai, « avoir de 50 % » est devenu « réduction de 50 % », et « sur demande sous 60 jours » est devenu « demande d'explication » |
 | 03/11/2026 | 10 questions simultanées | 10 réussites sur 10 en 54 s, attente maximale 54 s ([chapitre 12](12_production_entreprise.md)) |
 | 03/11/2026 | Mise à jour pendant l'utilisation | 64 questions envoyées en continu, 64 réponses HTTP 200, sur un seul essai |
-| 03/11/2026 | Connexion par compte (lot 2) | Déployée, révision `rag-agentique--0000004`. Vérifié sur le site : `401` sans identité, `401` avec un faux en-tête d'identité, redirection vers le bon annuaire. **Connexion réelle dans un navigateur à valider** |
+| 03/11/2026 | Connexion par compte (lot 2) | Déployée, révision `rag-agentique--0000004`. Vérifié sur le site : `401` sans identité, `401` avec un faux en-tête d'identité, redirection vers le bon annuaire. **Connexion réelle dans un navigateur à valider** : au premier essai, le navigateur a envoyé une ancienne clé gardée et n'a pas ouvert de session, d'où une page de déconnexion blanche. Corrigé dans le commit qui suit |
 | 03/11/2026 | Non mesuré | Le réveil complet après mise en veille |
 
 ## 11.1 Ce qu'on déploie

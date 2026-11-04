@@ -20,7 +20,7 @@ from sqlalchemy import text
 
 from app import audit
 from app.admission import BUSY_MESSAGE, QueueFull, get_admission
-from app.auth import LOGOUT_URL, User, require_admin, require_user, thread_key
+from app.auth import LOGOUT_URL, SERVICE_USER, User, require_admin, require_user, thread_key
 from app.config import get_settings
 from app.loaders import DOCUMENT_EXTENSIONS, TABULAR_EXTENSIONS
 from app.observability import run_config
@@ -112,7 +112,8 @@ def me(user: User = Depends(require_user)):
         "user": user.id,
         "roles": sorted(user.roles),
         "is_admin": user.is_admin,
-        "logout_url": LOGOUT_URL if get_settings().auth_mode == "easyauth" else None,
+        # La cle de service n'ouvre pas de session : rien a fermer.
+        "logout_url": LOGOUT_URL if get_settings().auth_mode == "easyauth" and user != SERVICE_USER else None,
     }
 
 
