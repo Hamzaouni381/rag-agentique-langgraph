@@ -28,7 +28,7 @@ answer_sql  ← question + SQL + résultat (100 lignes max) → réponse rédig�
 C'est `SQLDatabase` (langchain-community), connecté avec le rôle lecteur sur le schéma `tabular`, qui le produit. Exemple réel :
 
 ```
-CREATE TABLE tabular.incidents_septembre (
+CREATE TABLE t_9df6b026a8c6c26e3c3acd23.incidents_septembre (
     date TIMESTAMP, ligne TEXT, type_d_incident TEXT, retard_min BIGINT)
 /* 3 rows from incidents_septembre table:
 date        ligne  type_d_incident   retard_min
@@ -53,13 +53,13 @@ Laisser un LLM écrire du SQL exécuté sur une base est **dangereux**. Le LLM p
 
 | # | Barrière | Où | Ce qu'elle bloque |
 |---|---|---|---|
-| 1 | **Filtre statique** (`validate_sql`) | Python, avant l'envoi | Toute requête qui n'est pas un `SELECT`/`WITH` unique : instructions multiples (`;`), mots interdits (`INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `CREATE`, `TRUNCATE`, `GRANT`, `COPY`, `pg_sleep`, `pg_read_file`, `dblink`…) |
+| 1 | **Filtre statique** (`validate_sql`) | Python, avant l'envoi | Toute requête qui n'est pas un `SELECT`/`WITH` unique : instructions multiples (`;`), mots interdits (`INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `CREATE`, `TRUNCATE`, `GRANT`, `COPY`, `dblink`…), catalogue (`pg_*`, `information_schema`, qui révèleraient les noms des autres utilisateurs) et `set_config` |
 | 2 | **Transaction en lecture seule + délai maximal** | Session PostgreSQL | `SET TRANSACTION READ ONLY` refuse toute écriture ; `statement_timeout = 10 s` coupe les requêtes trop longues (une jointure qui exploserait, par exemple) ; on ne lit que 100 lignes ; on fait toujours un `rollback` |
-| 3 | **Rôle `rag_reader`** | Droits PostgreSQL | Ce rôle n'a **que** le droit `SELECT` sur le schéma `tabular`. Il ne voit ni les vecteurs, ni la mémoire, ni les autres schémas. **Vérifié** : un `DROP TABLE` exécuté avec ce rôle donne `ERROR: must be owner of table`. |
+| 3 | **Rôle de l'utilisateur** | Droits PostgreSQL | `rag_reader` n'a aucun droit propre : à l'ouverture de la connexion, il prend le rôle `r_<cle>` de l'utilisateur, qui n'a que `SELECT` sur son schéma `t_<cle>`. Ni les passages, ni la mémoire, ni l'audit, ni les tables d'un autre utilisateur. **Vérifié sur Azure** : `permission denied`. |
 
 **Pourquoi trois barrières** : le filtre statique peut être contourné (une écriture astucieuse peut échapper aux expressions régulières), et le code applicatif peut avoir un bug. **Les droits de la base, eux, ne se contournent pas depuis une requête.** C'est le principe du **moindre privilège**.
 
-**Deux connexions distinctes** : l'ingestion écrit avec le rôle `rag` (propriétaire), l'outil SQL lit avec `rag_reader`. Elles sont configurées par `DATABASE_URL` et `READER_DATABASE_URL`.
+**Deux connexions distinctes** : l'ingestion écrit avec le rôle `rag` (propriétaire), l'outil SQL lit avec `rag_reader`, sous le rôle de l'utilisateur. Elles sont configurées par `DATABASE_URL` et `READER_DATABASE_URL`.
 
 ## 6.6 Quand la branche SQL est choisie
 

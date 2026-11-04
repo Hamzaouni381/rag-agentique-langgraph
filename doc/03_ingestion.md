@@ -20,7 +20,7 @@ data/documents/
          2. Nettoyage (lignes/colonnes vides, noms de colonnes normalisés)
          3. Écriture d'une table par feuille dans le schéma PostgreSQL "tabular"
 
-Puis : invalidation de l'index BM25 (il sera reconstruit à la prochaine question)
+Chaque chunk porte son propriétaire (`owner_id`), base de la Row-Level Security
 ```
 
 Résultat renvoyé (exemple réel) :
@@ -78,7 +78,7 @@ Une ligne de tableau (`| … |`) tient sur une ligne : elle n'est coupée que si
 
 Chaque chunk commence par le nom de son fichier : `[procedure_PV300.docx]\n<texte>`.
 
-**Pourquoi.** Imaginons deux documents très proches, comme deux rapports de vérification ou deux versions d'un manuel. Sans ce préfixe, leurs chunks auraient des embeddings quasi identiques. Le nom du fichier, souvent porteur de sens (référence, produit, date), aide à la fois l'embedding et BM25 à **désambiguïser**.
+**Pourquoi.** Imaginons deux documents très proches, comme deux rapports de vérification ou deux versions d'un manuel. Sans ce préfixe, leurs chunks auraient des embeddings quasi identiques. Le nom du fichier, souvent porteur de sens (référence, produit, date), aide à la fois l'embedding et la recherche plein texte à **désambiguïser**.
 
 ## 3.5 Étape 4 — L'indexation synchronisée
 
@@ -120,15 +120,15 @@ Pour chaque chunk :
 2. **Nettoyage** : suppression des lignes et colonnes entièrement vides.
 3. **Normalisation des noms**, en minuscules, sans accents, avec des `_` : « Retard (min) » devient `retard_min`, « Type d'incident » devient `type_d_incident`. Le LLM écrira ainsi du SQL sans avoir à gérer les guillemets ni les accents.
 4. **Nom de table** : le nom du fichier, plus celui de la feuille s'il y en a plusieurs (`incidents_septembre`, ou `rapport_2026_feuil2`).
-5. **Écriture** : `to_sql(schema="tabular", if_exists="replace")`. Ré-importer un fichier **remplace** sa table.
+5. **Écriture** : `to_sql(schema="t_<cle>", if_exists="replace")`, dans le schéma de l'utilisateur. Ré-importer un fichier **remplace** sa table ; supprimer le fichier supprime sa table.
 
 Les types sont déduits par pandas : une date devient `TIMESTAMP`, un entier `BIGINT`, un texte `TEXT`.
 
-**Les droits.** Les tables sont créées par le rôle `rag`. Une règle posée par `init.sql` (`ALTER DEFAULT PRIVILEGES`) donne **automatiquement** le droit de lecture au rôle `rag_reader` sur toute nouvelle table du schéma `tabular`.
+**Les droits.** Les tables sont créées par le rôle `rag`. Une règle posée à la création du schéma (`ALTER DEFAULT PRIVILEGES`) donne **automatiquement** le droit de lecture au rôle de cet utilisateur, et à lui seul ([app/tenancy.py](../app/tenancy.py)).
 
 ## 3.7 Après l'ingestion
 
-L'index BM25 en mémoire est **invalidé** : la prochaine question le reconstruira à partir des chunks à jour. Pas besoin de redémarrer le serveur après une ingestion.
+Rien à faire : la recherche plein texte est calculée par PostgreSQL à l'écriture. Le document est interrogeable tout de suite, sans redémarrage, sur toutes les répliques.
 
 ## 3.8 À retenir pour l'expliquer
 

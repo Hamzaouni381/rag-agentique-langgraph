@@ -80,7 +80,7 @@ Conversation réelle sur le corpus de démo, avec le modèle `qwen2.5:1.5b`.
 1. **contextualize** : c'est le premier message de la conversation, il n'y a pas d'historique. La question est donc gardée telle quelle.
 2. **route** : le LLM répond `documents`. Les garde-fous confirment ce choix.
 3. **retrieve** :
-   - la recherche vectorielle et BM25 sortent chacune jusqu'à 20 candidats ;
+   - la recherche vectorielle et la recherche plein texte sortent chacune jusqu'à 20 candidats ;
    - la fusion RRF les combine ;
    - le reranker note chaque passage et garde les 5 meilleurs. Le meilleur, le chunk « Caractéristiques techniques » de `procedure_PV300.docx`, obtient un score de **0,93**.
 4. **grade** : 0,93 ≥ seuil de 0,15, le contexte est donc pertinent. On passe à `generate`.
@@ -99,7 +99,7 @@ Conversation réelle sur le corpus de démo, avec le modèle `qwen2.5:1.5b`.
    - elle utilise le vocabulaire des tables (« retard », « ligne » apparaissent dans la table `incidents_septembre`).
    → route `database`.
 2. **write_sql** : le LLM reçoit le schéma de la table, avec 3 lignes d'exemple, et écrit :
-   `SELECT SUM(retard_min) AS total_retard FROM tabular.incidents_septembre WHERE ligne = 'T2'`
+   `SELECT SUM(retard_min) AS total_retard FROM t_<cle>.incidents_septembre WHERE ligne = 'T2'`
 3. **execute_sql** : la requête est d'abord validée (un seul SELECT), puis exécutée en lecture seule avec un utilisateur qui n'a que le droit de lire. Résultat : `84`.
 4. **answer_sql** : « Le retard total cumulé sur la ligne T2 est de **84 minutes**. » Le calcul est juste : 35 + 8 + 41.
 

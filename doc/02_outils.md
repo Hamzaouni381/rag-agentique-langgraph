@@ -19,7 +19,7 @@ Chaque outil est présenté de la même façon :
 | `langchain-core` | Les abstractions : `Document`, messages, prompts, `Runnable`, `Embeddings`, `BaseLoader`, API `index()` | Partout |
 | `langchain` (1.x) | Le cœur « agent » : `init_chat_model`, `create_agent` | `init_chat_model` |
 | `langchain-classic` | Les anciennes briques de LangChain 0.x, déplacées : `EnsembleRetriever`, `SQLRecordManager`… | Fusion hybride, registre d'indexation |
-| `langchain-community` | Intégrations communautaires : `BM25Retriever`, `SQLDatabase`, `HuggingFaceCrossEncoder`, loaders | BM25, SQL, reranker, repli PDF |
+| `langchain-community` | Intégrations communautaires : `SQLDatabase`, `HuggingFaceCrossEncoder`, loaders | SQL, reranker, repli PDF |
 | `langchain-text-splitters` | Découpeurs de texte | `RecursiveCharacterTextSplitter` |
 | `langchain-openai`, `langchain-ollama`, `langchain-huggingface`, `langchain-postgres` | Paquets « partenaires », un par fournisseur | LLM, embeddings, pgvector |
 
@@ -96,7 +96,7 @@ Détail complet au [chapitre 5](05_graphe_langgraph.md).
 - Le script `docker/init.sql` est exécuté **une seule fois**, à la création du volume. Il :
   - active l'extension `vector` ;
   - crée le schéma `tabular` ;
-  - crée le rôle `rag_reader` (lecture seule).
+  - crée les rôles `rag_app` (passages, soumis à la Row-Level Security) et `rag_reader` (outil SQL, sans droit propre).
 - **Les tables présentes en base** :
 
 | Table | Créée par | Contenu |
@@ -105,7 +105,7 @@ Détail complet au [chapitre 5](05_graphe_langgraph.md).
 | `langchain_pg_embedding` | langchain-postgres | Une ligne par chunk : `embedding` (vecteur), `document` (texte), `cmetadata` (JSON : source, page…) |
 | `upsertion_record` | SQLRecordManager | Le registre d'indexation : empreinte de chaque chunk indexé + fichier d'origine |
 | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations` | PostgresSaver (LangGraph) | La mémoire des conversations |
-| `tabular.<nom>` | ingestion pandas | Une table par feuille Excel ou fichier CSV |
+| `t_<cle>.<nom>` | ingestion pandas | Une table par feuille Excel ou fichier CSV, dans le schéma de son propriétaire |
 
 **À savoir.**
 - **Aucun index vectoriel n'est créé** (vérifié en base : seuls un index B-tree sur l'id et un index GIN sur les métadonnées existent). La recherche est donc **exacte** : elle compare la question à **tous** les vecteurs. C'est parfait jusqu'à quelques dizaines de milliers de chunks. Au-delà, il faut un index **HNSW** (recherche approximative, très rapide). Le piège : la colonne est déclarée `vector` sans dimension, il faut donc l'indexer avec un cast, par exemple `CREATE INDEX ON langchain_pg_embedding USING hnsw ((embedding::vector(384)) vector_cosine_ops)`. Le même cast doit alors figurer dans les requêtes. Sinon, il faut recréer la table avec une dimension fixe.
@@ -170,22 +170,22 @@ Il est utilisé via `langchain-huggingface` (`HuggingFaceEmbeddings`), qui s'app
 
 ---
 
-## 2.7 BM25 et la recherche hybride (EnsembleRetriever, RRF)
+## 2.7 Le plein texte PostgreSQL et la recherche hybride (EnsembleRetriever, RRF)
 
 **C'est quoi.**
-- **BM25** : algorithme de recherche **par mots-clés**, le classique des moteurs de recherche. Il note un document selon la présence des mots de la question : un mot rare pèse plus, un mot répété apporte des points mais avec saturation, et les documents longs sont pénalisés.
-- **Recherche hybride** : on lance **en parallèle** la recherche vectorielle (le sens) et BM25 (les mots exacts), puis on **fusionne** les deux classements.
-- **RRF (Reciprocal Rank Fusion)** : la méthode de fusion. Chaque document reçoit `Σ poids / (60 + rang)` sur les deux listes. Elle ne compare que des **rangs**, pas des scores, ce qui évite de mélanger des échelles incompatibles (une distance cosinus et un score BM25).
+- **Plein texte** : recherche **par mots-clés** intégrée à PostgreSQL (`tsvector`, index GIN, `ts_rank`).
+- **Recherche hybride** : on lance **en parallèle** la recherche vectorielle (le sens) et le plein texte (les mots exacts), puis on **fusionne** les deux classements.
+- **RRF (Reciprocal Rank Fusion)** : la méthode de fusion. Chaque document reçoit `Σ poids / (60 + rang)` sur les deux listes. Elle ne compare que des **rangs**, pas des scores, ce qui évite de mélanger des échelles incompatibles (une distance cosinus et un score de mots-clés).
 
-**Pourquoi ici.** Les embeddings sont mauvais sur les **références exactes** : numéros de série, codes (« PV-300 », « SN-48213-B »), acronymes. BM25 les retrouve parfaitement. Les deux méthodes se complètent.
+**Pourquoi ici.** Les embeddings sont mauvais sur les **références exactes** : numéros de série, codes (« PV-300 », « SN-48213-B »), acronymes. Le plein texte les retrouve. Les deux méthodes se complètent.
 
 **Comment on l'utilise.**
-- `BM25Retriever` (langchain-community) est construit **en mémoire** à partir de tous les chunks lus dans PostgreSQL.
-- `EnsembleRetriever(retrievers=[vecteur, bm25], weights=[0.6, 0.4])` : le sens pèse un peu plus que les mots-clés.
+- `KeywordRetriever` ([app/retriever.py](../app/retriever.py)) interroge PostgreSQL.
+- `EnsembleRetriever(retrievers=[vecteur, mots_cles], weights=[0.6, 0.4])` : le sens pèse un peu plus que les mots-clés.
 
 **À savoir.**
-- **L'index BM25 vit dans la mémoire du processus Python.** Il est construit à la première question, puis invalidé et reconstruit après chaque ingestion. Avec **plusieurs workers ou serveurs**, chacun a son propre index, et seul celui qui a fait l'ingestion est invalidé. En production multi-instances, il faut passer à la recherche plein texte native de PostgreSQL (`tsvector`, index GIN), qui reste en base.
-- BM25 tient tout le corpus en RAM : c'est adapté à quelques dizaines de milliers de chunks.
+- **Tout reste en base** : un document déposé est visible tout de suite par toutes les répliques, et rien n'est à reconstruire au démarrage. La comparaison mesurée avec l'ancien index BM25 en mémoire est au [chapitre 4](04_recherche.md).
+- `ts_rank` n'est pas BM25 : il ne pondère pas les mots selon leur rareté dans le corpus. Le reranker compense au dernier étage.
 - Désactivable avec `HYBRID_SEARCH=false`.
 
 ---

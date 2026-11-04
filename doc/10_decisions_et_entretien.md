@@ -6,7 +6,7 @@
 |---|---|---|
 | **Un seul PostgreSQL** (pgvector + tables + mémoire) | ChromaDB/Pinecone + SQLite + Redis | Une seule base à sauvegarder, sécuriser et déployer. Transactions et rôles SQL (indispensables pour la sécurité du Text-to-SQL). Service managé disponible chez tous les clouds. Limite : moins de fonctions de recherche avancées qu'une base vectorielle dédiée à très grande échelle. |
 | **Graphe LangGraph explicite** | Agent ReAct libre (`create_agent` avec des outils) | Comportement borné et prévisible, coût maîtrisé, fonctionne avec un petit modèle local, chaque chemin est testable. |
-| **Recherche hybride + RRF** | Vecteurs seuls | Les références techniques exactes (codes, numéros) sont mal servies par les embeddings, très bien par BM25. |
+| **Recherche hybride + RRF** | Vecteurs seuls | Les références techniques exactes (codes, numéros) sont mal servies par les embeddings, très bien par la recherche plein texte. |
 | **Score du reranker comme juge de pertinence** | LLM-juge par document (le *Corrective RAG* des tutoriels) | Un modèle déjà présent, une passe au lieu de 5 appels LLM. Bien plus rapide sur CPU. |
 | **Refus sans appel LLM** si rien n'est pertinent | Laisser le LLM juger | Supprime la cause principale d'hallucination (LLM face à un contexte hors sujet). |
 | **Garde-fous déterministes sur le routage** | Faire confiance au LLM | Mesuré : le petit modèle route mal. Défaut sûr = `documents`. |
@@ -35,10 +35,10 @@ Conditions : PC portable, CPU uniquement (pas de GPU NVIDIA), corpus de démonst
 ## 10.3 Les limites (à connaître et à assumer)
 
 1. **Les garde-fous de routage sont des heuristiques** (listes de mots, comparaison de vocabulaire). Ils compensent un petit modèle, mais peuvent se tromper sur des formulations inattendues. Avec un modèle plus capable, on les remplacerait par une **sortie structurée** (`with_structured_output`, schéma Pydantic) et on ne garderait que le défaut sûr.
-2. **L'index BM25 vit en mémoire**, donc il ne se partage pas entre plusieurs instances. À l'échelle, il faut passer à la recherche plein texte PostgreSQL (`tsvector`).
+2. **`ts_rank` n'est pas BM25** : il ne pondère pas les mots selon leur rareté. Le reranker compense ; à grande échelle, une extension BM25 pour PostgreSQL serait à évaluer.
 3. **Pas d'index HNSW** : la recherche vectorielle est exacte, donc linéaire. C'est suffisant jusqu'à quelques dizaines de milliers de chunks.
 4. **Tout est synchrone** : chaque question occupe un thread du serveur. Pour beaucoup d'utilisateurs simultanés, il faut une version asynchrone (`ainvoke`, `AsyncPostgresSaver`).
-5. **Pas d'authentification par utilisateur ni de cloisonnement des documents** : tout le monde voit tout le corpus. Il faudrait des filtres par métadonnées dans la recherche, et un rôle SQL par périmètre.
+5. **Cloisonnement par personne, pas encore par équipe** : chacun ne voit que ses propres documents ([chapitre 12](12_production_entreprise.md)). Partager un document dans une équipe reste à construire.
 6. **La mémoire n'est jamais purgée** (checkpoints).
 7. **Le Text-to-SQL a un schéma minimal** (3 lignes d'exemple) et ne détecte pas une requête **valide mais fausse**.
 8. **Les citations dans le texte ne sont pas garanties** avec un petit modèle.
@@ -48,8 +48,8 @@ Conditions : PC portable, CPU uniquement (pas de GPU NVIDIA), corpus de démonst
 1. **Passer à OpenAI ou à un modèle local plus grand**, puis relancer l'évaluation pour mesurer le gain.
 2. **Un jeu d'évaluation avec réponses de référence** et des métriques RAGAS (`faithfulness`, `answer_correctness`, `context_recall`), suivi dans LangSmith.
 3. **Le *human-in-the-loop*** : `interrupt()` LangGraph avant l'exécution d'un SQL sensible, pour qu'un humain valide.
-4. **Version asynchrone** + recherche plein texte PostgreSQL + index HNSW, pour monter en charge.
-5. **Authentification** (Entra ID, comme la V1 avec MSAL) et cloisonnement des documents par utilisateur.
+4. **Version asynchrone** + index HNSW, pour monter en charge.
+5. **Partage de documents par équipe**, en plus du cloisonnement par personne déjà en place.
 6. **Le déploiement continu complet** : la CI publie déjà l'image et l'infrastructure est en Bicep ([chapitre 11](11_deploiement_azure.md)) ; la mise à jour de la Container App reste manuelle.
 7. **Le routage par sortie structurée**, et des outils supplémentaires branchés comme nouvelles branches du graphe (API métier, recherche web…).
 
@@ -59,7 +59,7 @@ Conditions : PC portable, CPU uniquement (pas de GPU NVIDIA), corpus de démonst
 > « J'ai d'abord développé un RAG entièrement à la main, sans framework, pour comprendre chaque brique : parsing, chunking, embeddings, reranking, Text-to-SQL. Puis je l'ai réécrit avec les standards du marché.
 >
 > L'orchestration est un **graphe LangGraph** qui route chaque question entre trois stratégies :
-> - un **RAG correctif** : recherche hybride pgvector + BM25, fusion RRF, reranker cross-encoder. Si le contexte n'est pas pertinent, l'agent reformule ; s'il ne trouve toujours rien, il refuse **sans appeler le LLM**, ce qui coupe la principale source d'hallucination ;
+> - un **RAG correctif** : recherche hybride pgvector + plein texte PostgreSQL, fusion RRF, reranker cross-encoder. Si le contexte n'est pas pertinent, l'agent reformule ; s'il ne trouve toujours rien, il refuse **sans appeler le LLM**, ce qui coupe la principale source d'hallucination ;
 > - un **Text-to-SQL auto-corrigé** sur les tableaux Excel importés, sécurisé par trois barrières dont un rôle PostgreSQL en lecture seule ;
 > - une réponse conversationnelle simple.
 >
@@ -85,7 +85,7 @@ Il y a quatre niveaux :
 Côté SQL, le calcul est fait par la base, pas par le LLM.
 
 **« Pourquoi une recherche hybride ? »**
-Les embeddings captent le sens mais ratent les références exactes (codes produit, numéros de série). BM25 fait l'inverse. Je fusionne par **RRF**, qui ne combine que des rangs : les scores des deux méthodes ne sont pas sur la même échelle.
+Les embeddings captent le sens mais ratent les références exactes (codes produit, numéros de série). Le plein texte fait l'inverse. Je fusionne par **RRF**, qui ne combine que des rangs : les scores des deux méthodes ne sont pas sur la même échelle.
 
 **« À quoi sert le reranker si on a déjà une recherche vectorielle ? »**
 L'embedding encode question et passage séparément : c'est rapide, mais approximatif. Le cross-encoder les lit **ensemble** : c'est précis, mais lent. On fait donc un premier tri large et rapide, puis un reclassement précis sur une quarantaine de candidats. En bonus, son score me sert de juge de pertinence.

@@ -10,7 +10,7 @@ question : "Quel est l'indice de protection du portique PV-300 ?"
    ├──► ÉTAGE 1a  Recherche VECTORIELLE (pgvector)     → 20 candidats proches en SENS
    │             "query: " + question → embedding → distance cosinus avec tous les chunks
    │
-   ├──► ÉTAGE 1b  Recherche BM25 (mots-clés)          → 20 candidats qui partagent les MOTS
+   ├──► ÉTAGE 1b  Recherche PLEIN TEXTE (PostgreSQL)   → 20 candidats qui partagent les MOTS
    │             "PV-300", "protection", "portique"...
    │
    ▼
@@ -32,17 +32,18 @@ question : "Quel est l'indice de protection du portique PV-300 ?"
 **Ce qu'elle trouve bien** : les reformulations et les synonymes. « Est-ce que c'est étanche ? » retrouve « Indice de protection IP54 ».
 **Ce qu'elle trouve mal** : les codes et références exactes (« PV-300 », « SN-48213-B »).
 
-## 4.3 Étage 1b — La recherche BM25
+## 4.3 Étage 1b — La recherche plein texte
 
-Elle note chaque chunk selon les mots de la question :
-- un **mot rare** dans le corpus (« PV-300 ») compte beaucoup ;
-- un **mot fréquent** (« le », « de ») ne compte presque pas ;
-- un mot répété apporte des points, avec un effet de saturation.
+PostgreSQL cherche les mots de la question dans une colonne `tsvector`, calculée automatiquement à l'écriture de chaque chunk et indexée (GIN). Deux dictionnaires se complètent :
+- `french` ramène les mots à leur racine : « portiques installés » trouve « portique installé » ;
+- `simple` garde les mots tels quels : « PV-300 » reste trouvable.
+
+Un seul mot commun suffit pour qu'un chunk soit candidat ; `ts_rank` classe ensuite les résultats. Le reranker fait le tri final.
 
 **Ce qu'elle trouve bien** : les références exactes, les noms propres, les codes.
 **Ce qu'elle trouve mal** : les synonymes (« étanche » ne trouve pas « IP54 »).
 
-L'index BM25 est construit **en mémoire** à la première question, à partir de tous les chunks lus dans PostgreSQL, puis réutilisé. Il est reconstruit après chaque ingestion.
+**Pourquoi pas BM25 en mémoire, comme avant.** Chaque réplique avait son propre index, et seule celle qui ingérait le mettait à jour. Surtout, sa configuration découpait le texte sur les espaces : `PV-100,` et `PV-100` y étaient deux mots différents. Mesuré sur 400 fiches proches avec 100 références recherchées : la bonne fiche sort dans les 5 premières **100 fois sur 100** avec PostgreSQL, **au mieux 2 fois sur 100** avec l'ancien index. Le prix : environ 21 ms par recherche au lieu de 0,3 ms, négligeable à côté du LLM.
 
 ## 4.4 Étage 2 — La fusion RRF
 
@@ -108,7 +109,7 @@ Ce schéma s'appelle le **RAG correctif** (*Corrective RAG*). Deux idées clés 
 
 ## 4.9 À retenir pour l'expliquer
 
-- « La recherche est **hybride** : sémantique avec pgvector, lexicale avec BM25. Je fusionne les deux par **RRF**, qui ne compare que des rangs. »
+- « La recherche est **hybride** : sémantique avec pgvector, lexicale avec le plein texte de PostgreSQL. Je fusionne les deux par **RRF**, qui ne compare que des rangs. »
 - « Un **cross-encoder** reclasse les candidats. Son score sert aussi de **juge de pertinence**, ce qui m'évite un appel LLM supplémentaire par document. »
 - « Si rien n'est pertinent, je **reformule une fois** puis je **refuse sans appeler le LLM**. C'est mon principal rempart contre les hallucinations. »
 - « Un **résumé** ne passe pas par cette recherche : je prends les passages du document cité, dans l'ordre, avec un prompt qui ne prévoit pas de refus. »

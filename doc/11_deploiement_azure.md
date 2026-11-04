@@ -10,7 +10,7 @@ Section tenue à jour à chaque intervention. N'y figure que ce qui a été vér
 |---|---|---|
 | 03/11/2026 | Application | **En ligne** : [rag-agentique.redground-2b9d1e76.spaincentral.azurecontainerapps.io](https://rag-agentique.redground-2b9d1e76.spaincentral.azurecontainerapps.io) |
 | 03/11/2026 | Azure | Groupe `rg-rag-agentique`, région `spaincentral`, déploiement `Succeeded`, base initialisée, pare-feu refermé |
-| 04/11/2026 | Images déployées | Tags `4842e6e9…` (API) et `ollama-513e2295…` (Ollama), révision `rag-agentique--0000005`. Valeur à jour : `az containerapp show -g rg-rag-agentique -n rag-agentique --query "properties.template.containers[].image"` |
+| 04/11/2026 | Images déployées | Tags `256741d4…` (API) et `ollama-256741d4…` (Ollama), révision `rag-agentique--0000008`. Valeur à jour : `az containerapp show -g rg-rag-agentique -n rag-agentique --query "properties.template.containers[].image"` |
 | 03/11/2026 | LLM | Ollama `qwen2.5:1.5b` dans un conteneur voisin de l'API, à la place d'Azure OpenAI (bloqué par `715-123420`) |
 | 03/11/2026 | Tests en production | Santé OK, `401` sans clé, 3 fichiers de `samples/` déposés en 9 s, questions documents et SQL correctes, streaming OK |
 | 03/11/2026 | Temps de réponse mesurés | Application déjà réveillée : 3 à 8 s pour une question, 8 à 20 s pour un résumé ; première question après chargement des modèles : 17 s |
@@ -21,6 +21,9 @@ Section tenue à jour à chaque intervention. N'y figure que ce qui a été vér
 | 04/11/2026 | Connexion par compte (lot 2) | Déployée. Vérifié sur le site : `401` sans identité, `401` avec un faux en-tête d'identité, redirection vers le bon annuaire. Connexion réussie dans une fenêtre privée. **Reste à vérifier :** une question enregistrée sous le nom de la personne, et la déconnexion |
 | 04/11/2026 | Ancienne clé dans un navigateur | Un navigateur qui gardait la clé entrait sans connexion : corrigé. S'il garde aussi l'ancienne version de la page, vider les données du site |
 | 04/11/2026 | Alertes | 4 alertes actives : erreurs 5xx, redémarrages, base injoignable, disque de la base. **Réception de l'e-mail non vérifiée** : Azure refuse l'envoi de test sur un abonnement gratuit (`Free subscription not supported`) |
+| 04/11/2026 | Retour arrière | Testé en production : ancienne version en service après 104 s, retour à la version courante après 70 s, 51 questions sur 51 en HTTP 200 |
+| 04/11/2026 | Isolation par utilisateur | En ligne, révision `rag-agentique--0000008`. Vérifié sur le PostgreSQL d'Azure : RLS active, 5 passages pour le bon propriétaire, 0 pour un autre ou sans propriétaire ([chapitre 12](12_production_entreprise.md)). **Reste à vérifier :** deux vraies personnes connectées |
+| 04/11/2026 | Corpus de démonstration | Les 3 fichiers de `samples/` sont maintenant dans l'espace du compte de service. Chaque personne connectée part d'un espace vide |
 | 03/11/2026 | Non mesuré | Le réveil complet après mise en veille |
 
 ## 11.1 Ce qu'on déploie
@@ -37,7 +40,7 @@ Tout est décrit dans [infra/main.bicep](../infra/main.bicep) : c'est de l'**Inf
 
 | Choix | Pourquoi | Pourquoi pas l'alternative |
 |---|---|---|
-| **Container Apps**, 0 à 1 réplique | Aucun coût de calcul au repos. Une seule réplique car l'index BM25 vit en mémoire. | App Service : facturé en continu. Une VM : à administrer soi-même. |
+| **Container Apps**, 0 à 1 réplique | Aucun coût de calcul au repos. Une seule réplique par choix de coût : le code en supporte plusieurs. | App Service : facturé en continu. Une VM : à administrer soi-même. |
 | **`environmentMode: WorkloadProfiles`** | Azure Files et les conteneurs voisins en ont besoin. | Sans ce réglage, Azure crée un environnement **Express**, qui n'accepte ni l'un ni l'autre. La valeur `Standard` est refusée. |
 | **PostgreSQL managé** | pgvector disponible, sauvegardes incluses, même code qu'en local. | Postgres dans un conteneur : données perdues à la mise en veille, et Azure Files (SMB) ne convient pas à un moteur de base de données. |
 | **Ollama, `qwen2.5:1.5b`, en sidecar** | Aucune dépendance à Azure OpenAI, dont le déploiement a été bloqué (`715-123420`). Même modèle et même code qu'en local. Les données restent dans le conteneur. | Azure OpenAI `gpt-4.1-mini` : bien plus rapide et moins cher à l'usage, mais bloqué sur cet abonnement au 02/11/2026. Ollama sur le PC exposé par un tunnel : l'application dépendrait d'un PC allumé. |
@@ -104,7 +107,7 @@ docker manifest inspect $OLLAMA_IMAGE     # idem
 
 ## 11.5 Étape 3 : créer les secrets
 
-Trois secrets, générés par le système et conservés dans un fichier ignoré par Git. Le préfixe `Rag` satisfait la règle de complexité d'Azure (majuscule, minuscule, chiffre), et l'hexadécimal évite tout caractère à échapper dans une URL de connexion.
+Quatre secrets, générés par le système et conservés dans un fichier ignoré par Git. Le préfixe `Rag` satisfait la règle de complexité d'Azure (majuscule, minuscule, chiffre), et l'hexadécimal évite tout caractère à échapper dans une URL de connexion.
 
 ```powershell
 function New-Secret {
@@ -114,7 +117,7 @@ function New-Secret {
 }
 
 if (-not (Test-Path infra\.secrets.ps1)) {
-  "`$PG_PASSWORD = 'Rag$(New-Secret)'`n`$READER_PASSWORD = 'Rag$(New-Secret)'`n`$API_KEY = '$(New-Secret)'" |
+  "`$PG_PASSWORD = 'Rag$(New-Secret)'`n`$READER_PASSWORD = 'Rag$(New-Secret)'`n`$APP_DB_PASSWORD = 'Rag$(New-Secret)'`n`$API_KEY = '$(New-Secret)'" |
     Out-File infra\.secrets.ps1 -Encoding utf8
 }
 Set-ExecutionPolicy -Scope Process Bypass -Force   # pour cette fenêtre seulement
@@ -135,7 +138,7 @@ $RG = 'rg-rag-agentique'
 $RG = 'rg-rag-agentique'
 az group create -n $RG -l spaincentral
 
-$params = @("image=$IMAGE", "ollamaImage=$OLLAMA_IMAGE", "postgresPassword=$PG_PASSWORD", "readerPassword=$READER_PASSWORD", "apiKey=$API_KEY", "authClientId=$AUTH_CLIENT_ID", "authClientSecret=$AUTH_CLIENT_SECRET", "alertEmail=$(az account show --query user.name -o tsv)")
+$params = @("image=$IMAGE", "ollamaImage=$OLLAMA_IMAGE", "postgresPassword=$PG_PASSWORD", "readerPassword=$READER_PASSWORD", "appDbPassword=$APP_DB_PASSWORD", "apiKey=$API_KEY", "authClientId=$AUTH_CLIENT_ID", "authClientSecret=$AUTH_CLIENT_SECRET", "alertEmail=$(az account show --query user.name -o tsv)")
 
 # Simulation : affiche ce qui serait créé, sans rien créer ni facturer
 az deployment group what-if -g $RG -f infra\main.bicep -p $params
@@ -166,7 +169,7 @@ $URL
 
 ## 11.7 Étape 5 : préparer la base
 
-[infra/init_db.sql](../infra/init_db.sql) active pgvector, crée le schéma `tabular` et le rôle lecture seule `rag_reader` de l'outil SQL. C'est la barrière n°3 du Text-to-SQL : sans ce rôle, la branche SQL reste désactivée.
+[infra/init_db.sql](../infra/init_db.sql) active pgvector et crée les rôles `rag_app` et `rag_reader`. L'application crée ensuite elle-même la Row-Level Security et, à la première visite de chaque personne, son schéma et son rôle ([app/tenancy.py](../app/tenancy.py)).
 
 Le pare-feu de Postgres bloque ton PC. On ouvre ton adresse le temps du script, puis on referme. `psql` tourne dans un conteneur, donc rien à installer, mais **Docker Desktop doit être lancé**.
 
@@ -174,18 +177,18 @@ Le pare-feu de Postgres bloque ton PC. On ouvre ton adresse le temps du script, 
 $MY_IP = Invoke-RestMethod https://api.ipify.org
 az postgres flexible-server firewall-rule create -g $RG --server-name $PG_NAME --name mon-pc --start-ip-address $MY_IP --end-ip-address $MY_IP
 
-Get-Content infra\init_db.sql -Raw | docker run --rm -i -e PGPASSWORD=$PG_PASSWORD pgvector/pgvector:pg16 psql "host=$PG_HOST port=5432 dbname=rag user=rag sslmode=require" -v "reader_password=$READER_PASSWORD"
+Get-Content infra\init_db.sql -Raw | docker run --rm -i -e PGPASSWORD=$PG_PASSWORD pgvector/pgvector:pg16 psql "host=$PG_HOST port=5432 dbname=rag user=rag sslmode=require" -v "reader_password=$READER_PASSWORD" -v "app_password=$APP_DB_PASSWORD"
 
 az postgres flexible-server firewall-rule delete -g $RG --server-name $PG_NAME --name mon-pc --yes
 ```
 
-**Attendu** : `CREATE EXTENSION`, `CREATE SCHEMA`, `CREATE ROLE`, `ALTER ROLE`, plusieurs `GRANT`, puis `ALTER DEFAULT PRIVILEGES`, sans `ERROR`.
+**Attendu** : `CREATE EXTENSION`, `CREATE ROLE`, `ALTER ROLE`, `GRANT`, sans `ERROR`.
 
 **Si le port 5432 est bloqué par ton réseau** : passe par [Azure Cloud Shell](https://shell.azure.com) (Bash), où `psql` est déjà installé et où la règle « services Azure » s'applique. Tu n'y as pas besoin de la règle `mon-pc` :
 
 ```bash
 git clone https://github.com/Hamzaouni381/rag-agentique-langgraph.git && cd rag-agentique-langgraph
-PGPASSWORD='<PG_PASSWORD>' psql "host=<PG_HOST> port=5432 dbname=rag user=rag sslmode=require" -v reader_password='<READER_PASSWORD>' -f infra/init_db.sql
+PGPASSWORD='<PG_PASSWORD>' psql "host=<PG_HOST> port=5432 dbname=rag user=rag sslmode=require" -v reader_password='<READER_PASSWORD>' -v app_password='<APP_DB_PASSWORD>' -f infra/init_db.sql
 ```
 
 ## 11.8 Étape 6 : tester de bout en bout
@@ -286,7 +289,8 @@ az group delete -n $RG --yes
 ## 11.11 Limites à connaître (et à dire en entretien)
 
 - **La base est joignable depuis tout service Azure** (règle `0.0.0.0`) : seuls le mot de passe et TLS la protègent. La bonne réponse en production est un VNet et un accès privé, écartés ici pour le coût et la complexité.
-- **Documents non cloisonnés** : tout utilisateur connecté interroge tous les documents. La suite serait un filtre par équipe dans la recherche.
+- **Pas de partage entre personnes** : chacun ne voit que ses documents. Partager un document dans une équipe reste à construire.
+- **L'application détient encore le rôle administrateur `rag`** pour créer les schémas et écrire les tables Excel. Sur Azure, ce rôle contourne la RLS : les lectures de passages passent donc toujours par `rag_app`. Le séparer davantage fait partie du lot sécurité.
 - **Secret d'application à renouveler chaque année** : une identité managée éviterait cette tâche (lot 4).
 - **Démarrage à froid**, prix du scale-to-zero : téléchargement des deux images (1,95 et 2,30 Go compressés), puis environ 40 s pour charger les modèles d'embedding et de rerank et 15 à 20 s pour charger le LLM (mesurés en conteneur limité à 2 vCPU). Réveille l'application et pose une question avant une démo.
 - **Le LLM tourne sur CPU.** Sur Azure, les questions du corpus de démonstration répondent en 3 à 7 s, application réveillée (quelques mesures seulement, à consolider avec `eval/run_eval.py`). Un long contexte reste bien plus lent : sur le PC de développement limité à 2 vCPU, 1 966 tokens de contexte et 256 générés prennent 149 s. Des documents plus longs rapprocheront donc les réponses de la limite de 240 s.
@@ -300,5 +304,5 @@ az group delete -n $RG --yes
 - *« Pourquoi Bicep plutôt que le portail ? »* Le déploiement est reproductible, relu comme du code, et testable à blanc avec `what-if`.
 - *« Comment gères-tu les secrets ? »* Jamais dans le dépôt ni dans l'image. Ce sont des secrets Container Apps, injectés en variables d'environnement. La clé Storage est lue directement par le Bicep (`listKeys`), personne ne la copie à la main.
 - *« Pourquoi Ollama plutôt qu'Azure OpenAI ? »* Azure OpenAI était bloqué par un contrôle anti-abus sur l'abonnement étudiant. Ollama retire cette dépendance sans changer le code, au prix de la latence. Avec un compte sans blocage, je reprendrais Azure OpenAI : une question y coûte environ 0,001 $ et répond bien plus vite.
-- *« Pourquoi une seule réplique ? »* L'index BM25 est en mémoire et n'est invalidé que dans le processus qui ingère. Pour monter en charge, il faudrait passer la recherche lexicale dans Postgres.
+- *« Pourquoi une seule réplique ? »* Par choix de coût : chaque réplique coûte 0,60 $/h active. La recherche est dans PostgreSQL, donc passer à plusieurs répliques ne demande qu'un réglage. Chacune aurait toutefois sa propre file d'attente.
 - *« Pourquoi les modèles sont-ils dans l'image ? »* Le disque est éphémère : sinon, chaque réveil retéléchargerait 1,6 Go depuis Hugging Face et dépendrait de sa disponibilité.

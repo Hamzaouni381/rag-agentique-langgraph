@@ -34,7 +34,7 @@ graph TD;
 |---|---|---|
 | **Ingestion** | PDF/Word → pages structurées → chunks → vecteurs | `BaseLoader` maison (parseurs V1) + `RecursiveCharacterTextSplitter` + API `index()` avec `SQLRecordManager` (incrémental, sans doublons) |
 | **Données tabulaires** | Excel/CSV → tables SQL | `pandas.to_sql` dans le schéma `tabular` de PostgreSQL |
-| **Recherche** | hybride + rerank | `PGVector` + `BM25Retriever` fusionnés par `EnsembleRetriever` (RRF), puis cross-encoder `bge-reranker-base` |
+| **Recherche** | hybride + rerank | `PGVector` + plein texte PostgreSQL fusionnés par `EnsembleRetriever` (RRF), puis cross-encoder `bge-reranker-base` |
 | **RAG correctif** | évite les hallucinations | si le meilleur score de rerank est sous le seuil : reformulation puis nouvelle recherche ; sinon refus **sans appel LLM** |
 | **Text-to-SQL** | questions analytiques | `SQLDatabase` (schéma et lignes d'exemple) → génération → exécution → auto-correction sur erreur |
 | **Mémoire** | questions de relance (« Et sa température ? ») | checkpointer `PostgresSaver` (clé `thread_id`) + nœud de contextualisation |
@@ -48,7 +48,7 @@ graph TD;
 ### Sécurité du Text-to-SQL (défense en profondeur)
 1. Filtre statique : une seule instruction `SELECT`/`WITH`, mots-clés dangereux refusés.
 2. Transaction `READ ONLY` + `statement_timeout`.
-3. Rôle PostgreSQL `rag_reader` qui n'a que `SELECT` sur le schéma `tabular` (créé par `docker/init.sql`). Même si les deux premières barrières cèdent, Postgres refuse l'écriture (vérifié : `ERROR: must be owner of table`).
+3. Le SQL s'exécute sous le rôle PostgreSQL de l'utilisateur, qui n'a que `SELECT` sur son propre schéma. Même si les deux premières barrières cèdent, Postgres refuse l'écriture et l'accès aux données des autres (vérifié : `permission denied`).
 
 ---
 

@@ -31,7 +31,8 @@ Objectif : pouvoir **expliquer le fonctionnement complet de mémoire**, sans ouv
 | **Embedding** | Vecteur de nombres (ici 384) qui représente le sens d'un texte ; deux textes proches en sens ont des vecteurs proches. |
 | **Chunk** | Morceau de document (≈1 500 caractères) indexé séparément. |
 | **Vector store** | Base qui stocke les embeddings et retrouve les plus proches d'une question (ici PostgreSQL + pgvector). |
-| **BM25** | Recherche par mots-clés classique (comme un moteur de recherche), très bonne sur les références exactes. |
+| **Plein texte** | Recherche par mots-clés intégrée à PostgreSQL (`tsvector`), très bonne sur les références exactes. |
+| **RLS** | *Row-Level Security* : PostgreSQL filtre lui-même les lignes selon l'utilisateur, quelle que soit la requête. |
 | **Reranker / cross-encoder** | Modèle qui relit chaque paire (question, passage) et donne un score de pertinence précis. |
 | **Agent / orchestration agentique** | Système où un LLM **décide** des étapes (quelle source interroger, reformuler ou non), au lieu d'un pipeline figé. |
 | **Graphe LangGraph** | Description de l'agent sous forme de nœuds (étapes) et d'arêtes (transitions, parfois conditionnelles). |
