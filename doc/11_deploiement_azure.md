@@ -20,6 +20,7 @@ Section tenue à jour à chaque intervention. N'y figure que ce qui a été vér
 | 03/11/2026 | Mise à jour pendant l'utilisation | 64 questions envoyées en continu, 64 réponses HTTP 200, sur un seul essai |
 | 04/11/2026 | Connexion par compte (lot 2) | Déployée. Vérifié sur le site : `401` sans identité, `401` avec un faux en-tête d'identité, redirection vers le bon annuaire. Connexion réussie dans une fenêtre privée. **Reste à vérifier :** une question enregistrée sous le nom de la personne, et la déconnexion |
 | 04/11/2026 | Ancienne clé dans un navigateur | Un navigateur qui gardait la clé entrait sans connexion : corrigé. S'il garde aussi l'ancienne version de la page, vider les données du site |
+| 04/11/2026 | Alertes | 4 alertes actives : erreurs 5xx, redémarrages, base injoignable, disque de la base. **Réception de l'e-mail non vérifiée** : Azure refuse l'envoi de test sur un abonnement gratuit (`Free subscription not supported`) |
 | 03/11/2026 | Non mesuré | Le réveil complet après mise en veille |
 
 ## 11.1 Ce qu'on déploie
@@ -134,7 +135,7 @@ $RG = 'rg-rag-agentique'
 $RG = 'rg-rag-agentique'
 az group create -n $RG -l spaincentral
 
-$params = @("image=$IMAGE", "ollamaImage=$OLLAMA_IMAGE", "postgresPassword=$PG_PASSWORD", "readerPassword=$READER_PASSWORD", "apiKey=$API_KEY", "authClientId=$AUTH_CLIENT_ID", "authClientSecret=$AUTH_CLIENT_SECRET")
+$params = @("image=$IMAGE", "ollamaImage=$OLLAMA_IMAGE", "postgresPassword=$PG_PASSWORD", "readerPassword=$READER_PASSWORD", "apiKey=$API_KEY", "authClientId=$AUTH_CLIENT_ID", "authClientSecret=$AUTH_CLIENT_SECRET", "alertEmail=$(az account show --query user.name -o tsv)")
 
 # Simulation : affiche ce qui serait créé, sans rien créer ni facturer
 az deployment group what-if -g $RG -f infra\main.bicep -p $params
@@ -144,7 +145,7 @@ az deployment group create -g $RG -n rag -f infra\main.bicep -p $params --query 
 ```
 
 - **Groupe de ressources** : un dossier logique. Le supprimer supprime tout son contenu.
-- **`what-if`** : équivalent d'un `terraform plan`. Attendu : 11 ressources en `Create`.
+- **`what-if`** : équivalent d'un `terraform plan`. Attendu sur un abonnement vide : 17 ressources en `Create` (11 pour l'application, 1 pour la connexion, 5 pour les alertes).
 - **Attendu après la création** : `Succeeded`.
 
 Le déploiement s'exécute côté Azure. Si ta connexion coupe, il continue : ne relance rien avant d'avoir vérifié son état.
@@ -252,6 +253,8 @@ Sans rôle attribué, la personne ne peut pas se connecter. Le secret de l'appli
 | Tout supprimer | Voir ci-dessous |
 
 > **Un serveur arrêté redémarre seul au bout de 7 jours**, et la facturation du calcul reprend. Pense à le recouper chaque semaine. Base arrêtée, le lien public répond `"database": "error"` : rallume-la **avant** un entretien.
+
+> **Couper la base déclenche l'alerte « base injoignable ».** C'est normal : ce n'est une panne que si tu ne l'as pas coupée toi-même.
 
 > Relancer le Bicep remet les variables d'environnement à l'état du fichier : ajoute toute nouvelle variable (Langfuse par exemple) dans `main.bicep` plutôt qu'à la main dans le portail.
 

@@ -34,8 +34,14 @@ param authClientId string = ''
 @description('Secret de l\'application Entra.')
 param authClientSecret string = ''
 
+@description('Adresse qui recoit les alertes. Vide : pas d\'alertes.')
+param alertEmail string = ''
+
 var suffix = uniqueString(resourceGroup().id)
 var authEnabled = !empty(authClientId)
+var alertsEnabled = !empty(alertEmail)
+var containerAppMetrics = 'Microsoft.App/containerapps'
+var postgresMetrics = 'Microsoft.DBforPostgreSQL/flexibleServers'
 
 // --- PostgreSQL ---
 resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
@@ -308,6 +314,108 @@ resource auth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (authEna
     }
   }
 }
+
+// --- Alertes : une panne doit se voir sans ouvrir le portail ---
+resource alertsEmail 'Microsoft.Insights/actionGroups@2023-01-01' = if (alertsEnabled) {
+  name: 'ag-rag-alertes'
+  location: 'global'
+  properties: {
+    groupShortName: 'rag-alertes'
+    enabled: true
+    emailReceivers: [
+      {
+        name: 'exploitation'
+        emailAddress: alertEmail
+        useCommonAlertSchema: true
+      }
+    ]
+  }
+}
+
+var alerts = [
+  {
+    name: 'rag-erreurs-5xx'
+    description: 'Au moins 3 reponses 5xx en 5 minutes'
+    severity: 1
+    scope: app.id
+    namespace: containerAppMetrics
+    metric: 'Requests'
+    aggregation: 'Total'
+    operator: 'GreaterThanOrEqual'
+    threshold: 3
+    dimensions: [{ name: 'statusCodeCategory', operator: 'Include', values: ['5xx'] }]
+  }
+  {
+    name: 'rag-redemarrages'
+    description: 'Un conteneur a redemarre'
+    severity: 2
+    scope: app.id
+    namespace: containerAppMetrics
+    metric: 'RestartCount'
+    aggregation: 'Maximum'
+    operator: 'GreaterThanOrEqual'
+    threshold: 1
+    dimensions: []
+  }
+  {
+    name: 'rag-base-injoignable'
+    description: 'PostgreSQL ne repond plus (normal si la base a ete coupee volontairement)'
+    severity: 0
+    scope: postgres.id
+    namespace: postgresMetrics
+    metric: 'is_db_alive'
+    aggregation: 'Minimum'
+    operator: 'LessThan'
+    threshold: 1
+    dimensions: []
+  }
+  {
+    name: 'rag-disque-base'
+    description: 'Disque PostgreSQL rempli a plus de 80 %'
+    severity: 2
+    scope: postgres.id
+    namespace: postgresMetrics
+    metric: 'storage_percent'
+    aggregation: 'Maximum'
+    operator: 'GreaterThan'
+    threshold: 80
+    dimensions: []
+  }
+]
+
+resource metricAlerts 'Microsoft.Insights/metricAlerts@2018-03-01' = [for alert in alerts: if (alertsEnabled) {
+  name: alert.name
+  location: 'global'
+  properties: {
+    description: alert.description
+    severity: alert.severity
+    enabled: true
+    scopes: [alert.scope]
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT5M'
+    autoMitigate: true
+    criteria: {
+      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
+      allOf: [
+        {
+          criterionType: 'StaticThresholdCriterion'
+          name: 'seuil'
+          metricNamespace: alert.namespace
+          metricName: alert.metric
+          timeAggregation: alert.aggregation
+          operator: alert.operator
+          threshold: alert.threshold
+          dimensions: alert.dimensions
+        }
+      ]
+    }
+    actions: [
+      {
+        actionGroupId: alertsEmail.id
+      }
+    ]
+  }
+}]
 
 output appUrl string = 'https://${app.properties.configuration.ingress.fqdn}'
 output postgresName string = postgres.name

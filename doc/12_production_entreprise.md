@@ -9,7 +9,7 @@ Ce chapitre dit ce que le système a déjà d'un vrai système de production, ce
 | Domaine | État | Ce qui existe | Ce qui manque |
 |---|---|---|---|
 | **Livraison** | Partiel | Infrastructure en Bicep, images construites par la CI, tests à chaque push, mise à jour sans coupure | Déploiement automatique, préproduction, retour arrière documenté |
-| **Exploitation** | Fait | File d'attente, refus explicite si saturation, délais maximum, sondes, arrêt progressif | Alertes |
+| **Exploitation** | Fait | File d'attente, refus explicite si saturation, délais maximum, sondes, arrêt progressif, alertes par e-mail | Vérifier la réception d'une vraie alerte |
 | **Traçabilité** | Partiel | Journal d'audit nominatif en base et en JSON, identifiant par requête | Traces Langfuse actives sur Azure |
 | **Identité et droits** | Partiel | Connexion Microsoft Entra, rôles `admin` et `user`, conversations cloisonnées, compte de service | Vérification de l'audit nominatif et de la déconnexion, documents cloisonnés |
 | **Sécurité** | Partiel | HTTPS, SQL en lecture seule à trois barrières, secrets hors du dépôt, taille des fichiers limitée | Key Vault, base sur réseau privé, défense contre l'injection de prompt |
@@ -42,9 +42,9 @@ Mesures du 03/11/2026 sur Azure : 4 vCPU au total, sans GPU, corpus de démonstr
 |---|---|---|---|
 | **1. Exploitation** | File d'attente, audit, mise à jour sans coupure, délais maximum | Quasi nul | **Fait** |
 | **2. Identité** | Connexion par compte Microsoft, rôles, audit nominatif, documents cloisonnés | Aucun | En cours : déployé, sauf le cloisonnement des documents |
-| **3. Qualité** | Modèle CPU choisi par mesure, contrôle des réponses, évaluation en CI, retours utilisateurs | Faible | À faire |
-| **4. Sécurité** | Key Vault, identité managée, réseau privé, défense contre l'injection de prompt | Faible | À faire |
-| **5. Livraison** | Déploiement automatique, préproduction, retour arrière, alertes, test de restauration | Quasi nul | À faire |
+| **3. Qualité** | Modèle CPU choisi par mesure, contrôle des réponses, évaluation en CI, retours utilisateurs | Faible | Écarté le 04/11/2026 : la priorité est la partie production |
+| **4. Livraison** | Alertes, retour arrière, test de restauration, déploiement automatique, préproduction | Quasi nul | En cours |
+| **5. Sécurité** | Key Vault, identité managée, réseau privé | Faible | À faire |
 
 **Hors de portée avec le crédit étudiant :** une réplique toujours active, plusieurs répliques et une base en haute disponibilité. Au tarif actif de 0,60 $ de l'heure, une seule réplique sollicitée en permanence coûterait environ 440 $ par mois, soit plus que le crédit total. Le tarif au repos est plus bas, mais je ne l'ai pas chiffré.
 
